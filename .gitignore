@@ -1,24 +1,75 @@
-# Logs
-logs
+# -----------------------
+# Node / Build Artifacts
+# -----------------------
+node_modules/
+dist/
+build/
+.cache/
 *.log
-npm-debug.log*
+
+# Vite
+.vite/
+vite.config.ts.timestamp-*
+
+# -----------------------
+# Environment Variables
+# -----------------------
+.env
+.env.*.local
+.env.local
+.env.development.local
+.env.production.local
+.env.test.local
+
+# Firebase
+.firebase/
+.firebaserc.local
+firebase-debug.log
+functions/node_modules/
+storage_debug.log
+firestore_debug.log
+
+# -----------------------
+# MacOS Files
+# -----------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# -----------------------
+# JetBrains (WebStorm)
+# -----------------------
+.idea/
+*.iml
+
+# -----------------------
+# VSCode
+# -----------------------
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# -----------------------
+# Temporary / Misc
+# -----------------------
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+*.old
+
+# Yarn / PNPM logs
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
-lerna-debug.log*
+npm-debug.log*
 
-node_modules
-dist
-dist-ssr
+# -----------------------
+# Local data / caches
+# -----------------------
 *.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
+.cache/
+coverage/
