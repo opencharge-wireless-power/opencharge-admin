@@ -11,6 +11,8 @@ import { PromotionsPage } from "./pages/PromotionsPage";
 import { AllSessionsPage} from "./pages/AllSessionsPage";
 import { CampaignListPage } from "./pages/CampaignListPage";
 import { CampaignDetailPage } from "./pages/CampaignDetailPage";
+import { UnitsListPage } from "./pages/UnitsListPage";
+import { UnitDetailPage } from "./pages/UnitDetailPage";
 
 export function App() {
   return (
@@ -62,8 +64,28 @@ export function App() {
             }
           />
             <Route path="/campaigns" element={<CampaignListPage />} />
-        <Route path="/campaigns/:campaignId" element={<CampaignDetailPage />} />
+        <Route
+          path="/campaigns/:brandId/:campaignId"
+          element={<CampaignDetailPage />}
+        />
           
+          
+          <Route
+            path="/units"
+            element={
+              <ProtectedRoute>
+                <UnitsListPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/units/:id"
+            element={
+              <ProtectedRoute>
+                <UnitDetailPage />
+              </ProtectedRoute>
+            }
+          />
 
           {/* Catch-all */}
           <Route path="*" element={<Navigate to="/" replace />} />

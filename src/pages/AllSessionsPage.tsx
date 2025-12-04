@@ -41,36 +41,22 @@ import CloseIcon from "@mui/icons-material/Close";
 import { db } from "../firebase";
 import { MainLayout } from "../components/layout/MainLayout";
 
-type DateFilter = "all" | "today" | "last7" | "last30";
 
-interface Session {
-  id: string;
-  locationId?: string;
-  unitId?: string;
-  unitName?: string;
-  startedAt?: Date;
-  endedAt?: Date;
-  durationMinutes?: number;
-  inProgress: boolean;
-  raw?: DocumentData;
-}
 
-function formatDateTime(date?: Date): string {
-  if (!date) return "-";
-  return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  })}`;
-}
 
-function formatDurationMinutes(minutes?: number): string {
-  if (minutes == null || Number.isNaN(minutes)) return "-";
-  if (minutes < 60) return `${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  const mins = minutes % 60;
-  if (mins === 0) return `${hours} h`;
-  return `${hours} h ${mins} min`;
-}
+
+
+// Shared types & helpers
+import type {
+  Session,
+  UnitLookup,
+  DateFilterSessions
+} from "../types/Opencharge";
+
+import {
+  formatDateTime,
+  formatDurationMinutes,
+} from "../utils/Format";
 
 export function AllSessionsPage() {
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -78,7 +64,7 @@ export function AllSessionsPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Filters
-  const [dateFilter, setDateFilter] = useState<DateFilter>("all");
+  const [dateFilter, setDateFilter] = useState<DateFilterSessions>("all");
   const [locationFilter, setLocationFilter] = useState<string>("all");
   const [unitFilter, setUnitFilter] = useState<string>("all");
   const [inProgressOnly, setInProgressOnly] = useState<boolean>(false);
@@ -90,11 +76,36 @@ export function AllSessionsPage() {
   // Fetch sessions across ALL locations (latest 200)
   useEffect(() => {
     const fetchSessions = async () => {
+      setLoading(true);
+      setError(null);
+
       try {
-        const sessionsRef = collection(db, "sessions");
+        // 1) Load all units so we can join sessions => units
+        const unitsSnap = await getDocs(collection(db, "units"));
+
+        const unitsById = new Map<string, UnitLookup>();
+        const unitsByParticleId = new Map<string, UnitLookup>();
+
+        unitsSnap.forEach((docSnap) => {
+          const data = docSnap.data() as DocumentData;
+          const unit: UnitLookup = {
+            id: docSnap.id,
+            name: (data.name as string) ?? "Unit",
+            locationId: data.locationId as string | undefined,
+            particleDeviceId: data.particleDeviceId as string | undefined,
+          };
+
+          unitsById.set(unit.id, unit);
+          if (unit.particleDeviceId) {
+            unitsByParticleId.set(unit.particleDeviceId, unit);
+          }
+        });
+
+        // 2) Load chargesessions (latest 200)
+        const sessionsRef = collection(db, "chargesessions");
         const qSessions = query(
           sessionsRef,
-          orderBy("startedAt", "desc"),
+          orderBy("start", "desc"),
           limit(200)
         );
 
@@ -103,22 +114,43 @@ export function AllSessionsPage() {
         const items: Session[] = snapshot.docs.map((docSnap) => {
           const data = docSnap.data() as DocumentData;
 
-          const startedTs = data.startedAt as Timestamp | undefined;
-          const endedTs = data.endedAt as Timestamp | undefined;
+          const startTs = data.start as Timestamp | undefined;
+          const endTs = data.end as Timestamp | undefined;
 
-          const startedAt = startedTs ? startedTs.toDate() : undefined;
-          const endedAt = endedTs ? endedTs.toDate() : undefined;
+          const startedAt = startTs ? startTs.toDate() : undefined;
+          const endedAt = endTs ? endTs.toDate() : undefined;
 
           const durationMinutes =
-            (data.durationMinutes as number | undefined) ?? undefined;
+            typeof data.duration === "number"
+              ? (data.duration as number)
+              : undefined;
 
           const inProgress = !endedAt;
 
+          const particleDeviceId = data.id as string | undefined;
+          const unitIdFromSession = data.unitId as string | undefined;
+
+          // Try to resolve the unit:
+          //  - first by unitId
+          //  - then by particleDeviceId
+          let unit: UnitLookup | undefined;
+          if (unitIdFromSession && unitsById.has(unitIdFromSession)) {
+            unit = unitsById.get(unitIdFromSession);
+          } else if (
+            particleDeviceId &&
+            unitsByParticleId.has(particleDeviceId)
+          ) {
+            unit = unitsByParticleId.get(particleDeviceId);
+          }
+
           return {
             id: docSnap.id,
-            locationId: data.locationId as string | undefined,
-            unitId: data.unitId as string | undefined,
-            unitName: data.unitName as string | undefined,
+            locationId: unit?.locationId,
+            unitId: unitIdFromSession ?? unit?.id,
+            unitName: unit?.name,
+            particleDeviceId,
+            deviceType: data.deviceType as string | undefined,
+            mode: data.mode as string | undefined,
             startedAt,
             endedAt,
             durationMinutes,
@@ -227,7 +259,7 @@ export function AllSessionsPage() {
 
   const handleDateFilterChange = (
     _: React.MouseEvent<HTMLElement>,
-    value: DateFilter | null
+    value: DateFilterSessions | null
   ) => {
     if (value) setDateFilter(value);
   };
@@ -278,7 +310,7 @@ export function AllSessionsPage() {
           All sessions
         </Typography>
         <Typography variant="body2" color="text.secondary">
-          Latest 200 sessions across all locations.
+          Latest 200 sessions across all locations (from chargesessions).
         </Typography>
       </Box>
 
@@ -472,6 +504,24 @@ export function AllSessionsPage() {
                       selectedSession.unitName ??
                       selectedSession.unitId ??
                       "-"
+                    }
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText
+                    primary="Particle device ID"
+                    secondary={selectedSession.particleDeviceId ?? "-"}
+                  />
+                </ListItem>
+                <ListItem>
+                  <ListItemText
+                    primary="Device / Mode"
+                    secondary={
+                      selectedSession.deviceType || selectedSession.mode
+                        ? `${selectedSession.deviceType ?? "-"} · ${
+                            selectedSession.mode ?? "-"
+                          }`
+                        : "-"
                     }
                   />
                 </ListItem>

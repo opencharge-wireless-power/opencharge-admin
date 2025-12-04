@@ -1,164 +1,173 @@
 // src/pages/CampaignDetailPage.tsx
-import { useEffect, useState, Fragment } from "react";
-import type { ChangeEvent, FormEvent } from "react";
+import {
+  useEffect,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
+  collection,
   doc,
   getDoc,
-  updateDoc,
-  addDoc,
-  collection,
   getDocs,
-  serverTimestamp,
+  updateDoc,
   query,
-  orderBy,
+  limit,
   type DocumentData,
   type Timestamp,
+  serverTimestamp,
 } from "firebase/firestore";
-import { db } from "../firebase";
-import { MainLayout } from "../components/layout/MainLayout";
-
 import {
   Box,
   Typography,
-  TextField,
-  Switch,
-  FormControlLabel,
-  Button,
   CircularProgress,
+  Chip,
   Card,
   CardContent,
+  Grid,
   Stack,
-  List,
-  ListItem,
-  ListItemText,
+  Button,
   Divider,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Checkbox,
   Table,
-  TableBody,
-  TableCell,
   TableHead,
+  TableBody,
   TableRow,
+  TableCell,
   TableContainer,
   Paper,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  FormControlLabel,
+  Switch,
 } from "@mui/material";
-import type { SelectChangeEvent } from "@mui/material/Select";
-
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import EditIcon from "@mui/icons-material/Edit";
 
-const BRAND_ID = "starbucks";
+import { db } from "../firebase";
+import { MainLayout } from "../components/layout/MainLayout";
 
-// Where the QR should point to (landing page that logs & redirects)
-const DEFAULT_QR_BASE_URL = "https://links.opencharge.app/c";
+const DEFAULT_BRAND_ID = "starbucks"; // fallback for legacy /campaigns/:id route
 
-interface LocationOption {
+interface Campaign {
   id: string;
-  name: string;
-  address?: string;
-}
-
-interface CampaignData {
-  id: string;
+  brandId: string;
   name: string;
   description?: string;
   active: boolean;
-  url: string;
-  targetUrl: string;
-  locationIds: string[];
   engagements: number;
+  locationIds: string[];
+  url?: string;
+  targetUrl?: string;
   createdAt?: Date;
-  startAt?: Date;
-  endAt?: Date;
+  updatedAt?: Date;
 }
 
-interface CampaignFormState {
+interface EngagementEvent {
+  id: string;
+  createdAt?: Date;
+  deviceBrand?: string;
+  deviceName?: string;
+  deviceOS?: string;
+  deviceType?: string;
+  raw?: DocumentData;
+}
+
+interface EditFormState {
   name: string;
   description: string;
-  active: boolean;
-  url: string;
   targetUrl: string;
-  locationIds: string[];
+  url: string;
+  active: boolean;
+  locationsText: string; // one per line
+}
+
+// Simple date helpers
+function formatDate(date?: Date): string {
+  if (!date) return "-";
+  return date.toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+  });
+}
+
+function formatDateTime(date?: Date): string {
+  if (!date) return "-";
+  return date.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export function CampaignDetailPage() {
-  const { campaignId } = useParams<{ campaignId: string }>();
+  // Support both new style /campaigns/:brandId/:campaignId
+  // and legacy /campaigns/:id
+  const params = useParams<{
+    brandId?: string;
+    campaignId?: string;
+    id?: string;
+  }>();
+
   const navigate = useNavigate();
 
-  const isNew = !campaignId || campaignId === "new";
+  const brandIdParam = params.brandId;
+  const campaignIdParam = params.campaignId;
+  const legacyId = params.id;
 
+  // Effective IDs we actually use
+  const effectiveCampaignId = campaignIdParam ?? legacyId ?? null;
+  const effectiveBrandId =
+    brandIdParam ?? (legacyId ? DEFAULT_BRAND_ID : null);
+
+  const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
 
-  const [campaign, setCampaign] = useState<CampaignData | null>(null);
-  const [form, setForm] = useState<CampaignFormState | null>(null);
+  // Engagements list
+  const [events, setEvents] = useState<EngagementEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(true);
+  const [eventsError, setEventsError] = useState<string | null>(null);
 
-  const [locations, setLocations] = useState<LocationOption[]>([]);
-  const [locationsLoading, setLocationsLoading] = useState(true);
-  const [locationsError, setLocationsError] = useState<string | null>(null);
+  // Edit dialog
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<EditFormState | null>(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
-  const locationMap: Record<string, LocationOption> = locations.reduce(
-    (acc, loc) => {
-      acc[loc.id] = loc;
-      return acc;
-    },
-    {} as Record<string, LocationOption>
-  );
+  const isCreateMode = effectiveCampaignId === "new";
 
-  // ---------- Fetch locations ----------
+  // --------- Load campaign (view / edit existing) ----------
   useEffect(() => {
-    const fetchLocations = async () => {
-      try {
-        const locationsRef = collection(db, "locations");
-        const q = query(locationsRef, orderBy("name", "asc"));
-        const snap = await getDocs(q);
-
-        const items: LocationOption[] = snap.docs.map((docSnap) => {
-          const data = docSnap.data() as DocumentData;
-          return {
-            id: docSnap.id,
-            name: (data.name as string | undefined) ?? "Unnamed location",
-            address: data.address as string | undefined,
-          };
-        });
-
-        setLocations(items);
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Failed to load locations";
-        setLocationsError(message);
-      } finally {
-        setLocationsLoading(false);
-      }
-    };
-
-    void fetchLocations();
-  }, []);
-
-  // ---------- Fetch / init campaign ----------
-  useEffect(() => {
-    const fetchCampaign = async () => {
-      if (isNew) {
-        const blank: CampaignFormState = {
-          name: "",
-          description: "",
-          active: true,
-          url: DEFAULT_QR_BASE_URL,
-          targetUrl: "",
-          locationIds: [],
-        };
-        setForm(blank);
-        setLoading(false);
+    const load = async () => {
+      if (!effectiveBrandId || !effectiveCampaignId || isCreateMode) {
+        // In create mode we don't load an existing doc
+        if (!isCreateMode && (!effectiveBrandId || !effectiveCampaignId)) {
+          setError("No campaign ID");
+          setLoading(false);
+        } else {
+          setLoading(false);
+        }
         return;
       }
 
       try {
-        const ref = doc(db, "engage", BRAND_ID, "campaigns", campaignId!);
+        setLoading(true);
+        setError(null);
+
+        const ref = doc(
+          db,
+          "engage",
+          effectiveBrandId,
+          "campaigns",
+          effectiveCampaignId
+        );
         const snap = await getDoc(ref);
 
         if (!snap.exists()) {
@@ -169,151 +178,273 @@ export function CampaignDetailPage() {
 
         const data = snap.data() as DocumentData;
 
-        const createdTs = data.createdAt as Timestamp | undefined;
-        const startTs = data.startAt as Timestamp | undefined;
-        const endTs = data.endAt as Timestamp | undefined;
+        const createdRaw =
+          (data.createdAt as Timestamp | undefined) ??
+          (data.createAt as Timestamp | undefined); // handle older typo
+        const updatedRaw = data.updatedAt as Timestamp | undefined;
 
-        const locIds = Array.isArray(data.locationIds)
+        const createdAt = createdRaw ? createdRaw.toDate() : undefined;
+        const updatedAt = updatedRaw ? updatedRaw.toDate() : undefined;
+
+        const locationIds: string[] = Array.isArray(data.locationIds)
           ? (data.locationIds as string[])
+          : Array.isArray(data.locations)
+          ? (data.locations as string[])
           : [];
 
-        const loadedCampaign: CampaignData = {
+        const c: Campaign = {
           id: snap.id,
+          brandId: effectiveBrandId,
           name: (data.name as string | undefined) ?? "Untitled campaign",
-          description: (data.description as string | undefined) ?? "",
+          description: data.description as string | undefined,
           active: (data.active as boolean | undefined) ?? false,
-          url:
-            (data.url as string | undefined) ??
-            (data.landingUrl as string | undefined) ??
-            DEFAULT_QR_BASE_URL,
-          targetUrl: (data.targetUrl as string | undefined) ?? "",
-          locationIds: locIds,
           engagements: (data.engagements as number | undefined) ?? 0,
-          createdAt: createdTs ? createdTs.toDate() : undefined,
-          startAt: startTs ? startTs.toDate() : undefined,
-          endAt: endTs ? endTs.toDate() : undefined,
+          locationIds,
+          url: data.url as string | undefined,
+          targetUrl: data.targetUrl as string | undefined,
+          createdAt,
+          updatedAt,
         };
 
-        setCampaign(loadedCampaign);
-
-        const formState: CampaignFormState = {
-          name: loadedCampaign.name,
-          description: loadedCampaign.description ?? "",
-          active: loadedCampaign.active,
-          url: loadedCampaign.url,
-          targetUrl: loadedCampaign.targetUrl,
-          locationIds: loadedCampaign.locationIds,
-        };
-
-        setForm(formState);
+        setCampaign(c);
       } catch (err) {
-        const message =
+        const msg =
           err instanceof Error ? err.message : "Failed to load campaign";
-        setError(message);
+        setError(msg);
       } finally {
         setLoading(false);
       }
     };
 
-    void fetchCampaign();
-  }, [campaignId, isNew]);
+    void load();
+  }, [effectiveBrandId, effectiveCampaignId, isCreateMode]);
 
-  // ---------- Handlers ----------
+  // --------- Load engagement events ----------
+  useEffect(() => {
+    const loadEvents = async () => {
+      if (!effectiveBrandId || !effectiveCampaignId || isCreateMode) {
+        setEventsLoading(false);
+        return;
+      }
 
-  const handleTextChange =
-    (field: keyof CampaignFormState) =>
-    (event: ChangeEvent<HTMLInputElement>) => {
-      if (!form) return;
-      setForm({
-        ...form,
-        [field]: event.target.value,
-      });
+      try {
+        setEventsLoading(true);
+        setEventsError(null);
+
+        const eventsRef = collection(
+          db,
+          "engage",
+          effectiveBrandId,
+          "campaigns",
+          effectiveCampaignId,
+          "engagements"
+        );
+
+        const snap = await getDocs(query(eventsRef, limit(100)));
+
+        const items: EngagementEvent[] = snap.docs.map((docSnap) => {
+          const data = docSnap.data() as DocumentData;
+
+          const tsRaw =
+            data.timeStamp as number | Timestamp | undefined | null;
+          const createdRaw = data.createdAt as Timestamp | undefined;
+
+          let createdAt: Date | undefined;
+
+          if (typeof tsRaw === "number") {
+            createdAt = new Date(tsRaw);
+          } else if (tsRaw && typeof (tsRaw as Timestamp).toDate === "function") {
+            createdAt = (tsRaw as Timestamp).toDate();
+          } else if (
+            createdRaw &&
+            typeof (createdRaw as Timestamp).toDate === "function"
+          ) {
+            createdAt = (createdRaw as Timestamp).toDate();
+          }
+
+          return {
+            id: docSnap.id,
+            createdAt,
+            deviceBrand: data.deviceBrand as string | undefined,
+            deviceName: data.deviceName as string | undefined,
+            deviceOS: data.deviceOS as string | undefined,
+            deviceType: data.deviceType as string | undefined,
+            raw: data,
+          };
+        });
+
+        // Sort newest first
+        items.sort((a, b) => {
+          const ta = a.createdAt?.getTime() ?? 0;
+          const tb = b.createdAt?.getTime() ?? 0;
+          return tb - ta;
+        });
+
+        setEvents(items);
+      } catch (err) {
+        const msg =
+          err instanceof Error
+            ? err.message
+            : "Failed to load engagement events";
+        setEventsError(msg);
+      } finally {
+        setEventsLoading(false);
+      }
     };
 
-  const handleActiveChange = (event: ChangeEvent<HTMLInputElement>) => {
-    if (!form) return;
-    setForm({
-      ...form,
-      active: event.target.checked,
-    });
+    void loadEvents();
+  }, [effectiveBrandId, effectiveCampaignId, isCreateMode]);
+
+  // --------- Edit / create dialog helpers ----------
+  const openEditDialog = () => {
+    // For create mode, open with empty defaults
+    if (isCreateMode) {
+      const form: EditFormState = {
+        name: "",
+        description: "",
+        targetUrl: "",
+        url: "",
+        active: true,
+        locationsText: "",
+      };
+      setEditForm(form);
+      setEditError(null);
+      setEditOpen(true);
+      return;
+    }
+
+    if (!campaign) return;
+    const form: EditFormState = {
+      name: campaign.name,
+      description: campaign.description ?? "",
+      targetUrl: campaign.targetUrl ?? "",
+      url: campaign.url ?? "",
+      active: campaign.active,
+      locationsText:
+        campaign.locationIds && campaign.locationIds.length > 0
+          ? campaign.locationIds.join("\n")
+          : "",
+    };
+    setEditForm(form);
+    setEditError(null);
+    setEditOpen(true);
   };
 
-  const handleLocationSelectChange = (
-    event: SelectChangeEvent<string[]>
-  ) => {
-    if (!form) return;
-
-    const value = event.target.value;
-    const selectedIds =
-      typeof value === "string" ? value.split(",") : (value as string[]);
-
-    setForm({
-      ...form,
-      locationIds: selectedIds,
-    });
+  const closeEditDialog = () => {
+    if (editSaving) return;
+    setEditOpen(false);
   };
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  const handleEditChange =
+    (field: keyof EditFormState) =>
+    (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      if (!editForm) return;
+
+      if (field === "active") {
+        setEditForm({ ...editForm, active: (e.target as any).checked });
+      } else {
+        setEditForm({ ...editForm, [field]: e.target.value });
+      }
+    };
+
+  const handleEditSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!form) return;
-
-    setSaving(true);
-    setSaveError(null);
+    if (!effectiveBrandId || !editForm) return;
 
     try {
+      setEditSaving(true);
+      setEditError(null);
+
+      const locations = editForm.locationsText
+        .split("\n")
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+
       const baseData: Record<string, unknown> = {
-        name: form.name.trim(),
-        description: form.description.trim(),
-        active: form.active,
-        url: form.url.trim() || DEFAULT_QR_BASE_URL,
-        targetUrl: form.targetUrl.trim(),
-        locationIds: form.locationIds,
-        updatedAt: serverTimestamp(),
+        name: editForm.name.trim(),
+        description: editForm.description.trim() || null,
+        targetUrl: editForm.targetUrl.trim() || null,
+        url: editForm.url.trim() || null,
+        active: editForm.active,
+        locationIds: locations,
       };
 
-      if (isNew) {
-        baseData.createdAt = serverTimestamp();
-        baseData.engagements = 0;
+      if (isCreateMode) {
+        // Create new campaign
+        const campaignsRef = collection(
+          db,
+          "engage",
+          effectiveBrandId,
+          "campaigns"
+        );
+        const newDocRef = await addDoc(campaignsRef, {
+          ...baseData,
+          engagements: 0,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
 
-        const campaignsRef = collection(db, "engage", BRAND_ID, "campaigns");
-        const newRef = await addDoc(campaignsRef, baseData);
+        // After creating, navigate to real detail page
+        navigate(`/campaigns/${effectiveBrandId}/${newDocRef.id}`, {
+          replace: true,
+        });
+      } else if (effectiveCampaignId && campaign) {
+        // Update existing campaign
+        const updates: Record<string, unknown> = {
+          ...baseData,
+          updatedAt: serverTimestamp(),
+        };
 
-        // After first save, go into edit mode for this campaign
-        navigate(`/campaigns/${newRef.id}`, { replace: true });
-      } else {
-        const ref = doc(db, "engage", BRAND_ID, "campaigns", campaignId!);
-        await updateDoc(ref, baseData);
-        navigate("/campaigns");
+        const ref = doc(
+          db,
+          "engage",
+          effectiveBrandId,
+          "campaigns",
+          effectiveCampaignId
+        );
+        await updateDoc(ref, updates);
+
+        const updatedCampaign: Campaign = {
+          ...campaign,
+          name: updates.name as string,
+          description:
+            (updates.description as string | null) ?? undefined,
+          targetUrl:
+            (updates.targetUrl as string | null) ?? undefined,
+          url: (updates.url as string | null) ?? undefined,
+          active: updates.active as boolean,
+          locationIds: locations,
+          updatedAt: new Date(),
+        };
+
+        setCampaign(updatedCampaign);
       }
+
+      setEditOpen(false);
     } catch (err) {
-      const message =
+      const msg =
         err instanceof Error ? err.message : "Failed to save campaign";
-      setSaveError(message);
+      setEditError(msg);
     } finally {
-      setSaving(false);
+      setEditSaving(false);
     }
   };
 
-  // Build per-location QR URL (what gets encoded in the sticker)
-  const buildQrUrl = (
-    baseUrl: string,
-    campId: string | undefined,
-    locationId: string
-  ) => {
-    const cid = campId ?? "CAMPAIGN_ID";
-    const url = baseUrl || DEFAULT_QR_BASE_URL;
+  // --------- Render guards ----------
+  if (!effectiveBrandId || !effectiveCampaignId) {
+    return (
+      <MainLayout>
+        <Box sx={{ mt: 3 }}>
+          <Typography variant="h4" gutterBottom>
+            Campaign
+          </Typography>
+          <Typography color="error">No campaign ID</Typography>
+        </Box>
+      </MainLayout>
+    );
+  }
 
-    const hasQuery = url.includes("?");
-    const joiner = hasQuery ? "&" : "?";
-
-    return `${url}${joiner}cid=${encodeURIComponent(
-      cid
-    )}&loc=${encodeURIComponent(locationId)}`;
-  };
-
-  // ---------- Render ----------
-
-  if (loading || !form) {
+  if (loading && !isCreateMode) {
     return (
       <MainLayout>
         <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
@@ -323,24 +454,38 @@ export function CampaignDetailPage() {
     );
   }
 
-  if (error) {
+  if (!isCreateMode && (error || !campaign)) {
     return (
       <MainLayout>
         <Box sx={{ mt: 3 }}>
           <Typography variant="h4" gutterBottom>
             Campaign
           </Typography>
-          <Typography color="error">{error}</Typography>
+          <Typography color="error">
+            {error ?? "Campaign not found"}
+          </Typography>
         </Box>
       </MainLayout>
     );
   }
 
+  // --------- Main UI ----------
+  const displayCampaign = campaign ?? {
+    // minimal dummy when in create mode so layout still works
+    id: "new",
+    brandId: effectiveBrandId,
+    name: "New campaign",
+    active: true,
+    engagements: 0,
+    locationIds: [],
+  } as Campaign;
+
   return (
     <MainLayout>
+      {/* Header */}
       <Box
         sx={{
-          mb: 2,
+          mb: 3,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
@@ -348,286 +493,330 @@ export function CampaignDetailPage() {
           flexWrap: "wrap",
         }}
       >
-        <Button
-          startIcon={<ArrowBackIcon />}
-          size="small"
-          variant="text"
-          onClick={() => navigate("/campaigns")}
-        >
-          Back to campaigns
-        </Button>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Button
+            startIcon={<ArrowBackIcon />}
+            size="small"
+            onClick={() => navigate(-1)}
+          >
+            Back
+          </Button>
+          <Typography variant="h4">
+            {isCreateMode ? "New campaign" : displayCampaign.name}
+          </Typography>
+          {!isCreateMode && (
+            <Chip
+              label={displayCampaign.active ? "Active" : "Inactive"}
+              size="small"
+              color={displayCampaign.active ? "success" : "default"}
+            />
+          )}
+        </Stack>
 
-        <Typography variant="h4">
-          {isNew ? "New campaign" : form.name || "Edit campaign"}
-        </Typography>
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Chip
+            label={`Brand: ${displayCampaign.brandId}`}
+            size="small"
+            variant="outlined"
+          />
+          <Button
+            variant="outlined"
+            startIcon={<EditIcon />}
+            onClick={openEditDialog}
+          >
+            {isCreateMode ? "Create campaign" : "Edit campaign"}
+          </Button>
+        </Stack>
       </Box>
 
-      <form onSubmit={handleSubmit}>
-        <Stack spacing={2}>
-          {/* Basic info */}
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Basic information
-              </Typography>
-
-              <TextField
-                label="Name"
-                fullWidth
-                margin="normal"
-                required
-                value={form.name}
-                onChange={handleTextChange("name")}
-              />
-
-              <TextField
-                label="Description"
-                fullWidth
-                margin="normal"
-                multiline
-                minRows={2}
-                value={form.description}
-                onChange={handleTextChange("description")}
-              />
-
-              <TextField
-                label="Advertiser target URL"
-                helperText="Where the user finally lands after tracking (brand landing page)."
-                fullWidth
-                margin="normal"
-                value={form.targetUrl}
-                onChange={handleTextChange("targetUrl")}
-              />
-
-              <TextField
-                label="QR landing base URL"
-                helperText="The URL encoded in the QR. Tracking parameters for campaign & location will be appended automatically."
-                fullWidth
-                margin="normal"
-                value={form.url}
-                onChange={handleTextChange("url")}
-              />
-
-              <Box sx={{ mt: 1 }}>
-                <FormControlLabel
-                  control={
-                    <Switch checked={form.active} onChange={handleActiveChange} />
-                  }
-                  label="Active"
-                />
-              </Box>
-
-              {saveError && (
-                <Typography color="error" variant="body2" sx={{ mt: 1 }}>
-                  {saveError}
+      {/* Info + summary */}
+      {!isCreateMode && (
+        <Grid container spacing={2} sx={{ mb: 3 }}>
+          {/* Campaign info card */}
+          <Grid item xs={12} md={6}>
+            <Card>
+              <CardContent>
+                <Typography variant="h6" gutterBottom>
+                  Campaign info
                 </Typography>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Locations selection */}
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Locations
-              </Typography>
-
-              {locationsLoading && (
-                <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
-                  <CircularProgress size={22} />
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Brand
+                  </Typography>
+                  <Typography variant="body1">
+                    {displayCampaign.brandId}
+                  </Typography>
                 </Box>
-              )}
 
-              {locationsError && (
-                <Typography color="error" variant="body2" sx={{ mt: 1 }}>
-                  {locationsError}
-                </Typography>
-              )}
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Description
+                  </Typography>
+                  <Typography variant="body1">
+                    {displayCampaign.description || "—"}
+                  </Typography>
+                </Box>
 
-              {!locationsLoading && !locationsError && (
-                <Fragment>
-                  <FormControl fullWidth margin="normal" size="small">
-                    <InputLabel id="campaign-locations-label">
-                      Locations
-                    </InputLabel>
-                    <Select
-                      labelId="campaign-locations-label"
-                      multiple
-                      value={form.locationIds}
-                      label="Locations"
-                      onChange={handleLocationSelectChange}
-                      renderValue={(selected) =>
-                        selected
-                          .map(
-                            (id) =>
-                              locationMap[id]?.name ??
-                              locationMap[id]?.id ??
-                              id
-                          )
-                          .join(", ")
-                      }
-                    >
-                      {locations.map((loc) => (
-                        <MenuItem key={loc.id} value={loc.id}>
-                          <Checkbox
-                            checked={form.locationIds.includes(loc.id)}
-                          />
-                          <ListItemText
-                            primary={loc.name}
-                            secondary={loc.address}
-                          />
-                        </MenuItem>
-                      ))}
-                    </Select>
-                  </FormControl>
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Locations
+                  </Typography>
+                  <Typography variant="body1">
+                    {displayCampaign.locationIds.length > 0
+                      ? displayCampaign.locationIds.join(", ")
+                      : "—"}
+                  </Typography>
+                </Box>
 
-                  {form.locationIds.length === 0 && (
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      sx={{ mt: 1 }}
-                    >
-                      Select one or more locations where this QR will be used.
-                      All units at a location can share the same QR code.
+                <Divider sx={{ my: 1.5 }} />
+
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Short URL (QR)
+                  </Typography>
+                  <Typography variant="body1">
+                    {displayCampaign.url || "—"}
+                  </Typography>
+                </Box>
+
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Target URL
+                  </Typography>
+                  <Typography variant="body1">
+                    {displayCampaign.targetUrl || "—"}
+                  </Typography>
+                </Box>
+
+                <Divider sx={{ my: 1.5 }} />
+
+                <Grid container spacing={1}>
+                  <Grid item xs={6}>
+                    <Typography variant="body2" color="text.secondary">
+                      Created
                     </Typography>
-                  )}
+                    <Typography variant="body1">
+                      {formatDate(displayCampaign.createdAt)}
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Typography variant="body2" color="text.secondary">
+                      Last updated
+                    </Typography>
+                    <Typography variant="body1">
+                      {formatDate(displayCampaign.updatedAt)}
+                    </Typography>
+                  </Grid>
+                </Grid>
+              </CardContent>
+            </Card>
+          </Grid>
 
-                  {form.locationIds.length > 0 && (
-                    <Box sx={{ mt: 2 }}>
-                      <Typography variant="subtitle1" gutterBottom>
-                        QR URL per location
-                      </Typography>
-
-                      <TableContainer component={Paper}>
-                        <Table size="small">
-                          <TableHead>
-                            <TableRow>
-                              <TableCell>Location</TableCell>
-                              <TableCell>Address</TableCell>
-                              <TableCell>QR URL (encode in sticker)</TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {form.locationIds.map((locId) => {
-                              const loc = locationMap[locId];
-                              const qrUrl = buildQrUrl(
-                                form.url || DEFAULT_QR_BASE_URL,
-                                isNew ? undefined : campaign?.id,
-                                locId
-                              );
-
-                              return (
-                                <TableRow key={locId}>
-                                  <TableCell>
-                                    {loc?.name ?? locId}
-                                  </TableCell>
-                                  <TableCell>
-                                    <Typography
-                                      variant="body2"
-                                      color="text.secondary"
-                                      noWrap
-                                      sx={{ maxWidth: 260 }}
-                                    >
-                                      {loc?.address ?? "—"}
-                                    </Typography>
-                                  </TableCell>
-                                  <TableCell>
-                                    <Typography
-                                      variant="body2"
-                                      sx={{ fontFamily: "monospace" }}
-                                    >
-                                      {qrUrl}
-                                    </Typography>
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-
-                      {isNew && (
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          sx={{ mt: 1, display: "block" }}
-                        >
-                          Once you save, <code>CAMPAIGN_ID</code> in the URLs
-                          will be replaced with the real campaign ID.
-                        </Typography>
-                      )}
-                    </Box>
-                  )}
-                </Fragment>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Engagement summary for existing campaigns */}
-          {!isNew && campaign && (
+          {/* Engagement summary card */}
+          <Grid item xs={12} md={6}>
             <Card>
               <CardContent>
                 <Typography variant="h6" gutterBottom>
                   Engagement summary
                 </Typography>
-
-                <List dense>
-                  <ListItem>
-                    <ListItemText
-                      primary="Total engagements"
-                      secondary={campaign.engagements}
-                    />
-                  </ListItem>
-                  <Divider component="li" />
-                  <ListItem>
-                    <ListItemText
-                      primary="Created at"
-                      secondary={
-                        campaign.createdAt
-                          ? campaign.createdAt.toLocaleString()
-                          : "—"
-                      }
-                    />
-                  </ListItem>
-                </List>
-
-                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                  Detailed per-event analytics are stored in the{" "}
-                  <code>engagements</code> sub-collection under this campaign
-                  in Firestore. You can extend this screen later to aggregate
-                  by location or device type.
-                </Typography>
+                <Grid container spacing={2}>
+                  <Grid item xs={6}>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      gutterBottom
+                    >
+                      Stored counter
+                    </Typography>
+                    <Typography variant="h4">
+                      {displayCampaign.engagements}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Value from <code>engagements</code> field on campaign
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={6}>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      gutterBottom
+                    >
+                      Loaded events
+                    </Typography>
+                    <Typography variant="h4">{events.length}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Last {events.length} events from{" "}
+                      <code>engagements</code> sub-collection
+                    </Typography>
+                  </Grid>
+                </Grid>
               </CardContent>
             </Card>
+          </Grid>
+        </Grid>
+      )}
+
+      {/* Recent engagement events */}
+      {!isCreateMode && (
+        <Box sx={{ mb: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            Recent engagement events
+          </Typography>
+
+          {eventsLoading && (
+            <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
+              <CircularProgress size={24} />
+            </Box>
           )}
 
-          {/* Save buttons */}
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "flex-end",
-              gap: 1,
-              mt: 1,
-              mb: 4,
-            }}
-          >
-            <Button
-              variant="outlined"
-              onClick={() => navigate("/campaigns")}
-              disabled={saving}
+          {eventsError && (
+            <Typography color="error" sx={{ mt: 1 }}>
+              {eventsError}
+            </Typography>
+          )}
+
+          {!eventsLoading && !eventsError && (
+            <TableContainer
+              component={Paper}
+              sx={{
+                borderRadius: 2,
+                border: "1px solid",
+                borderColor: "divider",
+              }}
             >
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Time</TableCell>
+                    <TableCell>Device brand</TableCell>
+                    <TableCell>Device name</TableCell>
+                    <TableCell>OS</TableCell>
+                    <TableCell>Type</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {events.map((ev) => (
+                    <TableRow key={ev.id}>
+                      <TableCell>{formatDateTime(ev.createdAt)}</TableCell>
+                      <TableCell>{ev.deviceBrand ?? "—"}</TableCell>
+                      <TableCell>{ev.deviceName ?? "—"}</TableCell>
+                      <TableCell>{ev.deviceOS ?? "—"}</TableCell>
+                      <TableCell>{ev.deviceType ?? "—"}</TableCell>
+                    </TableRow>
+                  ))}
+
+                  {events.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5}>
+                        <Typography
+                          align="center"
+                          variant="body2"
+                          sx={{ py: 2 }}
+                          color="text.secondary"
+                        >
+                          No engagement events recorded yet.
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </Box>
+      )}
+
+      {/* Edit / Create dialog */}
+      <Dialog
+        open={editOpen}
+        onClose={closeEditDialog}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>
+          {isCreateMode ? "Create campaign" : "Edit campaign"}
+        </DialogTitle>
+        <form onSubmit={handleEditSubmit}>
+          <DialogContent sx={{ pt: 1 }}>
+            {editForm && (
+              <>
+                <TextField
+                  label="Name"
+                  fullWidth
+                  margin="normal"
+                  value={editForm.name}
+                  onChange={handleEditChange("name")}
+                  required
+                />
+                <TextField
+                  label="Description"
+                  fullWidth
+                  margin="normal"
+                  multiline
+                  minRows={2}
+                  value={editForm.description}
+                  onChange={handleEditChange("description")}
+                />
+                <TextField
+                  label="Target URL"
+                  fullWidth
+                  margin="normal"
+                  value={editForm.targetUrl}
+                  onChange={handleEditChange("targetUrl")}
+                />
+                <TextField
+                  label="Short URL (QR)"
+                  fullWidth
+                  margin="normal"
+                  value={editForm.url}
+                  onChange={handleEditChange("url")}
+                  helperText="The URL encoded in the QR on the unit"
+                />
+
+                <TextField
+                  label="Locations (one per line)"
+                  fullWidth
+                  margin="normal"
+                  multiline
+                  minRows={3}
+                  value={editForm.locationsText}
+                  onChange={handleEditChange("locationsText")}
+                />
+
+                <Box sx={{ mt: 1 }}>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={editForm.active}
+                        onChange={handleEditChange("active")}
+                      />
+                    }
+                    label="Active"
+                  />
+                </Box>
+
+                {editError && (
+                  <Typography color="error" variant="body2" sx={{ mt: 1 }}>
+                    {editError}
+                  </Typography>
+                )}
+              </>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={closeEditDialog} disabled={editSaving}>
               Cancel
             </Button>
-            <Button type="submit" variant="contained" disabled={saving}>
-              {saving
+            <Button type="submit" variant="contained" disabled={editSaving}>
+              {editSaving
                 ? "Saving..."
-                : isNew
+                : isCreateMode
                 ? "Create campaign"
-                : "Save campaign"}
+                : "Save changes"}
             </Button>
-          </Box>
-        </Stack>
-      </form>
+          </DialogActions>
+        </form>
+      </Dialog>
     </MainLayout>
   );
 }

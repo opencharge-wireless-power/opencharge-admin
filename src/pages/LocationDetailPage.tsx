@@ -399,65 +399,93 @@ export function LocationDetailPage() {
     void fetchUnits();
   }, [id]);
 
-  // ---------- Fetch SESSIONS ----------
-  useEffect(() => {
-    const fetchSessions = async () => {
-      if (!id) {
-        setSessionsLoading(false);
-        return;
-      }
+// ---------- Fetch SESSIONS ----------
+useEffect(() => {
+  const fetchSessions = async () => {
+    if (!id) {
+      setSessionsLoading(false);
+      return;
+    }
 
-      try {
-        const sessionsRef = collection(db, "sessions");
-        //const sessionsRef = collection(db, "chargesessions");
-        const qSessions = query(
-          sessionsRef,
-          where("locationId", "==", id),
-          orderBy("startedAt", "desc"),
-          limit(50)
-        );
+    // If the location has no units, we can bail early
+    if (!units || units.length === 0) {
+      setSessions([]);
+      setSessionsLoading(false);
+      return;
+    }
 
-        const snapshot = await getDocs(qSessions);
+    setSessionsLoading(true);
+    setSessionsError(null);
 
-        const items: Session[] = snapshot.docs.map((docSnap) => {
+    try {
+      // 1) Get latest chargesessions from Firestore
+      const sessionsRef = collection(db, "chargesessions");
+      const qSessions = query(
+        sessionsRef,
+        orderBy("start", "desc"),
+        limit(200) // adjust as needed
+      );
+
+      const snapshot = await getDocs(qSessions);
+
+      // 2) Index units for quick lookup by unitId
+      const unitsById = new Map(units.map((u) => [u.id, u]));
+      const locationUnitIds = new Set(units.map((u) => u.id));
+
+      // 3) Build our Session objects, only keeping sessions
+      //    whose unitId belongs to this location
+      const items: Session[] = snapshot.docs
+        .map((docSnap) => {
           const data = docSnap.data() as DocumentData;
 
-          const startedTs = data.startedAt as Timestamp | undefined;
-          const endedTs = data.endedAt as Timestamp | undefined;
+          const startTs = data.start as Timestamp | undefined;
+          const endTs = data.end as Timestamp | undefined;
 
-          const startedAt = startedTs ? startedTs.toDate() : undefined;
-          const endedAt = endedTs ? endedTs.toDate() : undefined;
+          const startedAt = startTs ? startTs.toDate() : undefined;
+          const endedAt = endTs ? endTs.toDate() : undefined;
 
           const durationMinutes =
-            (data.durationMinutes as number | undefined) ?? undefined;
+            typeof data.duration === "number" ? data.duration : undefined;
 
           const inProgress = !endedAt;
 
+          const unitId = data.unitId as string | undefined;
+          const unit = unitId ? unitsById.get(unitId) : undefined;
+
+          // If this session's unit does not belong to this location,
+          // we'll drop it later in the filter step.
           return {
             id: docSnap.id,
-            locationId: data.locationId as string | undefined,
-            unitId: data.unitId as string | undefined,
-            unitName: data.unitName as string | undefined,
+            unitId,
+            particleDeviceId: data.id as string | undefined,
+            deviceType: data.deviceType as string | undefined,
+            mode: data.mode as string | undefined,
+
+            // joined fields
+            unitName: unit?.name,
+            locationId: id,
+
             startedAt,
             endedAt,
             durationMinutes,
             inProgress,
             raw: data,
-          };
-        });
+          } as Session;
+        })
+        .filter((s) => !s.unitId || locationUnitIds.has(s.unitId)); // keep only this location's units
 
-        setSessions(items);
-      } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Failed to load sessions";
-        setSessionsError(message);
-      } finally {
-        setSessionsLoading(false);
-      }
-    };
+      setSessions(items);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Failed to load sessions";
+      setSessionsError(message);
+    } finally {
+      setSessionsLoading(false);
+    }
+  };
 
-    void fetchSessions();
-  }, [id]);
+  void fetchSessions();
+}, [id, units]);
 
   // ---------- Fetch PROMOTIONS ----------
   useEffect(() => {

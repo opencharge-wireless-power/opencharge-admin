@@ -72,10 +72,19 @@ export interface UnitEditForm {
 }
 
 export interface Session {
+   // Firestore document id (chargesession doc)
   id: string;
-  locationId?: string;
+
+  // From chargesessions
   unitId?: string;
+  particleDeviceId?: string; // the "id" field in chargesessions
+  deviceType?: string;
+  mode?: string;
+
+  // Derived / joined
   unitName?: string;
+  locationId?: string;
+
   startedAt?: Date;
   endedAt?: Date;
   durationMinutes?: number;
@@ -163,6 +172,8 @@ export interface Unit {
 }
 export type DateFilter = "all" | "today" | "last7";
 
+export type DateFilterSessions = "all" | "today" | "last7" | "last30";
+
 export type CampaignStatus = "draft" | "active" | "paused" | "ended";
 
 export interface Campaign {
@@ -184,4 +195,11 @@ export interface CampaignLocation {
   locationId: string;
   qrUrl: string;
   status: "active" | "paused";
+}
+
+export interface UnitLookup {
+  id: string;
+  name: string;
+  locationId?: string;
+  particleDeviceId?: string;
 }

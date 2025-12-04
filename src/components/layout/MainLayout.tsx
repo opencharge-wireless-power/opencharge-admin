@@ -19,7 +19,8 @@ import PlaceIcon from "@mui/icons-material/Place";
 import LocalOfferIcon from "@mui/icons-material/LocalOffer";
 import TimelineIcon from "@mui/icons-material/Timeline";
 import LogoutIcon from "@mui/icons-material/Logout";
-import CampaignIcon from "@mui/icons-material/Campaign"; // 👈 NEW
+import CampaignIcon from "@mui/icons-material/Campaign"; 
+import PowerIcon from "@mui/icons-material/Power";
 import { Link as RouterLink, useLocation } from "react-router-dom";
 import { useAuth } from "../../hooks/useAuth";
 
@@ -58,6 +59,12 @@ export function MainLayout({ children }: MainLayoutProps) {
       to: "/campaigns",
       icon: <CampaignIcon fontSize="small" />,
       match: (path: string) => path.startsWith("/campaigns"),
+    },
+    {
+      label: "Units",
+      to: "/units",
+      icon: <PowerIcon fontSize="small" />,
+      match: (path: string) => path === "/units" || path.startsWith("/units/"),
     },
     {
       label: "Sessions",

@@ -1,13 +1,17 @@
 // src/pages/CampaignListPage.tsx
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   collection,
   getDocs,
   query,
   orderBy,
+  addDoc,
+  doc,
+  setDoc,
   type DocumentData,
   type Timestamp,
+  serverTimestamp,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { MainLayout } from "../components/layout/MainLayout";
@@ -26,16 +30,34 @@ import {
   Paper,
   Chip,
   Stack,
-  IconButton,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  Checkbox,
+  FormControlLabel,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
-import EditIcon from "@mui/icons-material/Edit";
 
-// If you support multiple brands later, this can become dynamic
-const BRAND_ID = "starbucks";
+interface Brand {
+  id: string;
+  name: string;
+}
+
+interface LocationItem {
+  id: string;
+  name: string;
+}
 
 interface CampaignListItem {
   id: string;
+  brandId: string;
+  brandName: string;
   name: string;
   active: boolean;
   engagements: number;
@@ -48,34 +70,140 @@ interface CampaignListItem {
 export function CampaignListPage() {
   const navigate = useNavigate();
 
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [selectedBrandId, setSelectedBrandId] = useState<string>("all");
+
+  const [locations, setLocations] = useState<LocationItem[]>([]);
+
   const [campaigns, setCampaigns] = useState<CampaignListItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingBrands, setLoadingBrands] = useState(true);
+  const [loadingCampaigns, setLoadingCampaigns] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // New brand dialog
+  const [brandDialogOpen, setBrandDialogOpen] = useState(false);
+  const [newBrandName, setNewBrandName] = useState("");
+  const [brandSaving, setBrandSaving] = useState(false);
+  const [brandSaveError, setBrandSaveError] = useState<string | null>(null);
+
+  // New campaign dialog
+  const [campaignDialogOpen, setCampaignDialogOpen] = useState(false);
+  const [newCampaignName, setNewCampaignName] = useState("");
+  const [newCampaignDescription, setNewCampaignDescription] = useState("");
+  const [newCampaignTargetUrl, setNewCampaignTargetUrl] = useState("");
+  const [newCampaignUrl, setNewCampaignUrl] =
+    useState("https://links.opencharge.app/c");
+  const [newCampaignActive, setNewCampaignActive] = useState(true);
+  const [newCampaignLocationIds, setNewCampaignLocationIds] = useState<string[]>(
+    []
+  );
+  const [campaignSaving, setCampaignSaving] = useState(false);
+  const [campaignSaveError, setCampaignSaveError] = useState<string | null>(
+    null
+  );
+
+  // ---------- Load brands once ----------
   useEffect(() => {
-    const fetchCampaigns = async () => {
+    const fetchBrands = async () => {
       try {
-        const campaignsRef = collection(db, "engage", BRAND_ID, "campaigns");
-        const q = query(campaignsRef, orderBy("createdAt", "desc"));
+        setLoadingBrands(true);
+        setError(null);
 
-        const snap = await getDocs(q);
-
-        const items: CampaignListItem[] = snap.docs.map((docSnap) => {
+        const snap = await getDocs(collection(db, "engage"));
+        const items: Brand[] = snap.docs.map((docSnap) => {
           const data = docSnap.data() as DocumentData;
-          const createdTs = data.createdAt as Timestamp | undefined;
-
           return {
             id: docSnap.id,
-            name: (data.name as string | undefined) ?? "Untitled campaign",
-            active: (data.active as boolean | undefined) ?? false,
-            engagements: (data.engagements as number | undefined) ?? 0,
-            locationCount: Array.isArray(data.locationIds)
-              ? data.locationIds.length
-              : 0,
-            url: data.url as string | undefined,
-            targetUrl: data.targetUrl as string | undefined,
-            createdAt: createdTs ? createdTs.toDate() : undefined,
+            name: (data.name as string | undefined) ?? docSnap.id,
           };
+        });
+
+        items.sort((a, b) => a.name.localeCompare(b.name));
+        setBrands(items);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to load brands";
+        setError(message);
+      } finally {
+        setLoadingBrands(false);
+      }
+    };
+
+    void fetchBrands();
+  }, []);
+
+  // ---------- Load locations once ----------
+  useEffect(() => {
+    const fetchLocations = async () => {
+      try {
+        const snap = await getDocs(collection(db, "locations"));
+        const items: LocationItem[] = snap.docs.map((docSnap) => {
+          const data = docSnap.data() as DocumentData;
+          return {
+            id: docSnap.id,
+            name: (data.name as string | undefined) ?? docSnap.id,
+          };
+        });
+        items.sort((a, b) => a.name.localeCompare(b.name));
+        setLocations(items);
+      } catch (err) {
+        console.error("Failed to load locations", err);
+      }
+    };
+
+    void fetchLocations();
+  }, []);
+
+  // ---------- Load campaigns when brand filter changes ----------
+  useEffect(() => {
+    const fetchCampaigns = async () => {
+      if (loadingBrands) return;
+
+      try {
+        setLoadingCampaigns(true);
+        setError(null);
+
+        const items: CampaignListItem[] = [];
+        const brandMap = new Map(brands.map((b) => [b.id, b.name]));
+
+        const loadBrandCampaigns = async (brandId: string) => {
+          const campaignsRef = collection(db, "engage", brandId, "campaigns");
+          const q = query(campaignsRef, orderBy("createdAt", "desc"));
+          const snap = await getDocs(q);
+
+          snap.docs.forEach((docSnap) => {
+            const data = docSnap.data() as DocumentData;
+            const createdTs = data.createdAt as Timestamp | undefined;
+
+            items.push({
+              id: docSnap.id,
+              brandId,
+              brandName: brandMap.get(brandId) ?? brandId,
+              name: (data.name as string | undefined) ?? "Untitled campaign",
+              active: (data.active as boolean | undefined) ?? false,
+              engagements: (data.engagements as number | undefined) ?? 0,
+              locationCount: Array.isArray(data.locationIds)
+                ? data.locationIds.length
+                : Array.isArray(data.locations)
+                ? data.locations.length
+                : 0,
+              url: data.url as string | undefined,
+              targetUrl: data.targetUrl as string | undefined,
+              createdAt: createdTs ? createdTs.toDate() : undefined,
+            });
+          });
+        };
+
+        if (selectedBrandId === "all") {
+          await Promise.all(brands.map((b) => loadBrandCampaigns(b.id)));
+        } else {
+          await loadBrandCampaigns(selectedBrandId);
+        }
+
+        items.sort((a, b) => {
+          const ta = a.createdAt?.getTime() ?? 0;
+          const tb = b.createdAt?.getTime() ?? 0;
+          return tb - ta;
         });
 
         setCampaigns(items);
@@ -84,15 +212,141 @@ export function CampaignListPage() {
           err instanceof Error ? err.message : "Failed to load campaigns";
         setError(message);
       } finally {
-        setLoading(false);
+        setLoadingCampaigns(false);
       }
     };
 
     void fetchCampaigns();
-  }, []);
+  }, [selectedBrandId, brands, loadingBrands]);
+
+  // ---------- Brand selection ----------
+  const handleBrandChange = (e: ChangeEvent<{ value: unknown }>) => {
+    setSelectedBrandId(e.target.value as string);
+  };
+
+  // ---------- New brand dialog ----------
+  const openNewBrandDialog = () => {
+    setNewBrandName("");
+    setBrandSaveError(null);
+    setBrandDialogOpen(true);
+  };
+
+  const closeNewBrandDialog = () => {
+    if (brandSaving) return;
+    setBrandDialogOpen(false);
+  };
+
+  const handleCreateBrand = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const rawName = newBrandName.trim();
+    if (!rawName) return;
+
+    try {
+      setBrandSaving(true);
+      setBrandSaveError(null);
+
+      // Use brand name as document ID
+      const brandId = rawName;
+      const brandRef = doc(db, "engage", brandId);
+      await setDoc(brandRef, {
+        name: rawName,
+        createdAt: serverTimestamp(),
+      });
+
+      const newBrand: Brand = {
+        id: brandId,
+        name: rawName,
+      };
+
+      setBrands((prev) => {
+        const next = [...prev, newBrand];
+        next.sort((a, b) => a.name.localeCompare(b.name));
+        return next;
+      });
+
+      setSelectedBrandId(brandId);
+      setBrandDialogOpen(false);
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Failed to create brand";
+      setBrandSaveError(msg);
+    } finally {
+      setBrandSaving(false);
+    }
+  };
+
+  // ---------- New campaign dialog ----------
+  const openNewCampaignDialog = () => {
+    setNewCampaignName("");
+    setNewCampaignDescription("");
+    setNewCampaignTargetUrl("");
+    setNewCampaignUrl("https://links.opencharge.app/c");
+    setNewCampaignActive(true);
+    setNewCampaignLocationIds([]);
+    setCampaignSaveError(null);
+    setCampaignDialogOpen(true);
+  };
+
+  const closeNewCampaignDialog = () => {
+    if (campaignSaving) return;
+    setCampaignDialogOpen(false);
+  };
+
+  const handleLocationsChange = (e: ChangeEvent<{ value: unknown }>) => {
+    const value = e.target.value as string[];
+    setNewCampaignLocationIds(value);
+  };
+
+  const handleCreateCampaign = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (
+      !newCampaignName.trim() ||
+      !selectedBrandId ||
+      selectedBrandId === "all"
+    ) {
+      return;
+    }
+
+    try {
+      setCampaignSaving(true);
+      setCampaignSaveError(null);
+
+      const campaignsRef = collection(
+        db,
+        "engage",
+        selectedBrandId,
+        "campaigns"
+      );
+      const docRef = await addDoc(campaignsRef, {
+        name: newCampaignName.trim(),
+        description: newCampaignDescription.trim(),
+        active: newCampaignActive,
+        engagements: 0,
+        locationIds: newCampaignLocationIds,
+        url: newCampaignUrl.trim(),
+        targetUrl: newCampaignTargetUrl.trim(),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      setCampaignDialogOpen(false);
+
+      // Navigate to the new campaign detail page (include brandId)
+      navigate(`/campaigns/${selectedBrandId}/${docRef.id}`);
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Failed to create campaign";
+      setCampaignSaveError(msg);
+    } finally {
+      setCampaignSaving(false);
+    }
+  };
+
+  const isLoading = loadingBrands || loadingCampaigns;
 
   return (
     <MainLayout>
+      {/* Header */}
       <Box
         sx={{
           mb: 3,
@@ -112,16 +366,44 @@ export function CampaignListPage() {
           </Typography>
         </Box>
 
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={() => navigate("/campaigns/new")}
-        >
-          New campaign
-        </Button>
+        <Stack direction="row" spacing={2} alignItems="center">
+          <FormControl size="small" sx={{ minWidth: 220 }}>
+            <InputLabel id="brand-select-label">Brand</InputLabel>
+            <Select
+              labelId="brand-select-label"
+              label="Brand"
+              value={selectedBrandId}
+              onChange={handleBrandChange as any}
+            >
+              <MenuItem value="all">All brands</MenuItem>
+              {brands.map((b) => (
+                <MenuItem key={b.id} value={b.id}>
+                  {b.name} ({b.id})
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+
+          <Button variant="outlined" onClick={openNewBrandDialog}>
+            New brand
+          </Button>
+
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={openNewCampaignDialog}
+            disabled={
+              !selectedBrandId ||
+              selectedBrandId === "all" ||
+              brands.length === 0
+            }
+          >
+            New campaign
+          </Button>
+        </Stack>
       </Box>
 
-      {loading && (
+      {isLoading && (
         <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
           <CircularProgress />
         </Box>
@@ -133,23 +415,31 @@ export function CampaignListPage() {
         </Typography>
       )}
 
-      {!loading && !error && (
+      {!isLoading && !error && (
         <TableContainer component={Paper}>
           <Table size="small">
             <TableHead>
               <TableRow>
+                <TableCell>Brand</TableCell>
                 <TableCell>Name</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Locations</TableCell>
                 <TableCell>Engagements</TableCell>
                 <TableCell>Target URL</TableCell>
                 <TableCell>Created</TableCell>
-                <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {campaigns.map((c) => (
-                <TableRow key={c.id} hover>
+                <TableRow
+                  key={c.id}
+                  hover
+                  sx={{ cursor: "pointer" }}
+                  onClick={() =>
+                    navigate(`/campaigns/${c.brandId}/${c.id}`)
+                  }
+                >
+                  <TableCell>{c.brandName}</TableCell>
                   <TableCell>
                     <Typography variant="body2" sx={{ fontWeight: 500 }}>
                       {c.name}
@@ -179,16 +469,6 @@ export function CampaignListPage() {
                       ? c.createdAt.toLocaleDateString()
                       : "—"}
                   </TableCell>
-                  <TableCell align="right">
-                    <Stack direction="row" spacing={1} justifyContent="flex-end">
-                      <IconButton
-                        size="small"
-                        onClick={() => navigate(`/campaigns/${c.id}`)}
-                      >
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                    </Stack>
-                  </TableCell>
                 </TableRow>
               ))}
 
@@ -201,7 +481,11 @@ export function CampaignListPage() {
                       sx={{ py: 2 }}
                       color="text.secondary"
                     >
-                      No campaigns yet. Click “New campaign” to create one.
+                      {brands.length === 0
+                        ? "No brands yet. Create a brand first."
+                        : selectedBrandId === "all"
+                        ? "No campaigns found for any brand."
+                        : "No campaigns yet for this brand. Click “New campaign” to create one."}
                     </Typography>
                   </TableCell>
                 </TableRow>
@@ -210,6 +494,144 @@ export function CampaignListPage() {
           </Table>
         </TableContainer>
       )}
+
+      {/* New brand dialog */}
+      <Dialog
+        open={brandDialogOpen}
+        onClose={closeNewBrandDialog}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>New brand</DialogTitle>
+        <form onSubmit={handleCreateBrand}>
+          <DialogContent sx={{ pt: 1 }}>
+            <TextField
+              label="Brand name"
+              fullWidth
+              margin="normal"
+              value={newBrandName}
+              onChange={(e) => setNewBrandName(e.target.value)}
+              required
+            />
+            {brandSaveError && (
+              <Typography color="error" variant="body2" sx={{ mt: 1 }}>
+                {brandSaveError}
+              </Typography>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={closeNewBrandDialog} disabled={brandSaving}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="contained" disabled={brandSaving}>
+              {brandSaving ? "Saving..." : "Create brand"}
+            </Button>
+          </DialogActions>
+        </form>
+      </Dialog>
+
+      {/* New campaign dialog */}
+      <Dialog
+        open={campaignDialogOpen}
+        onClose={closeNewCampaignDialog}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle>New campaign</DialogTitle>
+        <form onSubmit={handleCreateCampaign}>
+          <DialogContent sx={{ pt: 1 }}>
+            <TextField
+              label="Campaign name"
+              fullWidth
+              margin="normal"
+              value={newCampaignName}
+              onChange={(e) => setNewCampaignName(e.target.value)}
+              required
+            />
+
+            <TextField
+              label="Description"
+              fullWidth
+              margin="normal"
+              value={newCampaignDescription}
+              onChange={(e) => setNewCampaignDescription(e.target.value)}
+              multiline
+              minRows={2}
+            />
+
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={newCampaignActive}
+                  onChange={(e) => setNewCampaignActive(e.target.checked)}
+                />
+              }
+              label="Active"
+            />
+
+            <FormControl fullWidth margin="normal" size="small">
+              <InputLabel id="locations-label">Locations</InputLabel>
+              <Select
+                labelId="locations-label"
+                label="Locations"
+                multiple
+                value={newCampaignLocationIds}
+                onChange={handleLocationsChange as any}
+                renderValue={(selected) => {
+                  const ids = selected as string[];
+                  const names = ids
+                    .map(
+                      (id) => locations.find((l) => l.id === id)?.name ?? id
+                    )
+                    .join(", ");
+                  return names;
+                }}
+              >
+                {locations.map((loc) => (
+                  <MenuItem key={loc.id} value={loc.id}>
+                    <Checkbox
+                      checked={newCampaignLocationIds.includes(loc.id)}
+                    />
+                    <Typography variant="body2">{loc.name}</Typography>
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <TextField
+              label="Short URL (QR)"
+              fullWidth
+              margin="normal"
+              value={newCampaignUrl}
+              onChange={(e) => setNewCampaignUrl(e.target.value)}
+              helperText="Printed on the QR sticker (e.g. links.opencharge.app)."
+            />
+
+            <TextField
+              label="Target URL"
+              fullWidth
+              margin="normal"
+              value={newCampaignTargetUrl}
+              onChange={(e) => setNewCampaignTargetUrl(e.target.value)}
+              helperText="Final destination after redirects (brand landing page)."
+            />
+
+            {campaignSaveError && (
+              <Typography color="error" variant="body2" sx={{ mt: 1 }}>
+                {campaignSaveError}
+              </Typography>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={closeNewCampaignDialog} disabled={campaignSaving}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="contained" disabled={campaignSaving}>
+              {campaignSaving ? "Saving..." : "Create campaign"}
+            </Button>
+          </DialogActions>
+        </form>
+      </Dialog>
     </MainLayout>
   );
 }
