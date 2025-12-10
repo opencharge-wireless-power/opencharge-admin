@@ -3,8 +3,11 @@ import { useEffect, useState } from "react";
 import {
   collection,
   getDocs,
+  query,
+  where,
+  limit,
   type DocumentData,
-  type Timestamp,
+  Timestamp,
 } from "firebase/firestore";
 import {
   Box,
@@ -48,6 +51,17 @@ interface BrandEngagement {
   campaignCount: number;
 }
 
+interface AppAdoptionMetrics {
+  total: number;
+  withApp: number;
+  uniqueUnitsWithApp: number;
+}
+
+interface AppLocationRow {
+  locationLabel: string;
+  sessions: number;
+}
+
 function formatDateTime(date?: Date): string {
   if (!date) return "-";
   return date.toLocaleString(undefined, {
@@ -60,6 +74,17 @@ function formatDateTime(date?: Date): string {
 }
 
 export function DashboardPage() {
+  // App adoption / app insights
+  const [appAdoption, setAppAdoption] =
+    useState<AppAdoptionMetrics | null>(null);
+  const [appAdoptionLoading, setAppAdoptionLoading] =
+    useState<boolean>(true);
+  const [appAvgBatteryDelta30, setAppAvgBatteryDelta30] =
+    useState<number | null>(null);
+  const [appTopLocations30, setAppTopLocations30] = useState<
+    AppLocationRow[]
+  >([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -89,20 +114,23 @@ export function DashboardPage() {
   const [brandsCount, setBrandsCount] = useState(0);
   const [campaignsCount, setCampaignsCount] = useState(0);
   const [activeCampaignsCount, setActiveCampaignsCount] = useState(0);
-  const [campaignEngagementTotal, setCampaignEngagementTotal] = useState(0);
-  const [avgEngagementPerCampaign, setAvgEngagementPerCampaign] = useState<
-    number | null
-  >(null);
-  const [topCampaignLabel, setTopCampaignLabel] = useState<string | null>(null);
+  const [campaignEngagementTotal, setCampaignEngagementTotal] =
+    useState(0);
+  const [avgEngagementPerCampaign, setAvgEngagementPerCampaign] =
+    useState<number | null>(null);
+  const [topCampaignLabel, setTopCampaignLabel] = useState<string | null>(
+    null
+  );
 
   const [topCampaigns, setTopCampaigns] = useState<TopCampaign[]>([]);
-  const [brandEngagements, setBrandEngagements] = useState<BrandEngagement[]>(
-    []
-  );
+  const [brandEngagements, setBrandEngagements] = useState<
+    BrandEngagement[]
+  >([]);
 
   // Recent sessions
   const [recentSessions, setRecentSessions] = useState<SessionItem[]>([]);
 
+  // ---------- Main dashboard data ----------
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
@@ -197,7 +225,9 @@ export function DashboardPage() {
           const unitId = data.unitId as string | undefined;
           const unit = unitId ? unitsById.get(unitId) : undefined;
           const locationId = unit?.locationId;
-          const location = locationId ? locationsById.get(locationId) : undefined;
+          const location = locationId
+            ? locationsById.get(locationId)
+            : undefined;
 
           const status: "completed" | "in_progress" | undefined = endedAt
             ? "completed"
@@ -379,7 +409,9 @@ export function DashboardPage() {
         setBrandEngagements(brandStats);
       } catch (err) {
         const msg =
-          err instanceof Error ? err.message : "Failed to load dashboard data";
+          err instanceof Error
+            ? err.message
+            : "Failed to load dashboard data";
         setError(msg);
       } finally {
         setLoading(false);
@@ -387,6 +419,108 @@ export function DashboardPage() {
     };
 
     void fetchDashboardData();
+  }, []);
+
+  // ---------- App adoption / app insights (last 30 days) ----------
+  useEffect(() => {
+    const fetchAppAdoption = async () => {
+      try {
+        setAppAdoptionLoading(true);
+
+        const now = new Date();
+        const thirtyDaysAgo = new Date(
+          now.getTime() - 30 * 24 * 60 * 60 * 1000
+        );
+
+        const ref = collection(db, "chargesessions");
+
+        const q = query(
+          ref,
+          where("start", ">=", Timestamp.fromDate(thirtyDaysAgo)),
+          limit(2000) // adjust if you expect very high volume
+        );
+
+        const snap = await getDocs(q);
+
+        let total = 0;
+        let withApp = 0;
+        const unitsWithApp = new Set<string>();
+
+        let batteryDeltaSum = 0;
+        let batteryDeltaCount = 0;
+
+        const locationMap = new Map<string, number>();
+
+        snap.docs.forEach((docSnap) => {
+          const data = docSnap.data() as DocumentData;
+          total++;
+
+          const hasAppInfo =
+            !!data.appLinked ||
+            !!data.appDeviceMake ||
+            !!data.appDeviceModel ||
+            data.appBatteryDelta != null;
+
+          if (!hasAppInfo) return;
+
+          withApp++;
+
+          const unitId =
+            (data.unitId as string | undefined) ??
+            (data.id as string | undefined);
+          if (unitId) unitsWithApp.add(unitId);
+
+          const delta =
+            typeof data.appBatteryDelta === "number" &&
+            !Number.isNaN(data.appBatteryDelta)
+              ? (data.appBatteryDelta as number)
+              : null;
+          if (delta != null) {
+            batteryDeltaSum += delta;
+            batteryDeltaCount++;
+          }
+
+          const locLabel =
+            (data.appLocationId as string | undefined) ??
+            (data.locationId as string | undefined) ??
+            "Unknown location";
+          locationMap.set(locLabel, (locationMap.get(locLabel) ?? 0) + 1);
+        });
+
+        setAppAdoption({
+          total,
+          withApp,
+          uniqueUnitsWithApp: unitsWithApp.size,
+        });
+
+        setAppAvgBatteryDelta30(
+          batteryDeltaCount > 0
+            ? batteryDeltaSum / batteryDeltaCount
+            : null
+        );
+
+        const topLocs: AppLocationRow[] = Array.from(
+          locationMap.entries()
+        )
+          .map(([locationLabel, sessions]) => ({
+            locationLabel,
+            sessions,
+          }))
+          .sort((a, b) => b.sessions - a.sessions)
+          .slice(0, 5);
+
+        setAppTopLocations30(topLocs);
+      } catch (err) {
+        console.error("Failed to load app adoption metrics", err);
+        setAppAdoption(null);
+        setAppAvgBatteryDelta30(null);
+        setAppTopLocations30([]);
+      } finally {
+        setAppAdoptionLoading(false);
+      }
+    };
+
+    void fetchAppAdoption();
   }, []);
 
   return (
@@ -397,7 +531,7 @@ export function DashboardPage() {
         </Typography>
         <Typography variant="body2" color="text.secondary">
           High-level overview of Opencharge locations, units, sessions,
-          promotions and campaign engagement.
+          promotions, campaign engagement and app usage.
         </Typography>
       </Box>
 
@@ -415,7 +549,7 @@ export function DashboardPage() {
 
       {!loading && !error && (
         <>
-          {/* Row 1: locations / units / sessions / promotions */}
+          {/* Row 1: locations / units / sessions / promotions / app adoption */}
           <Grid container spacing={2} sx={{ mb: 3 }}>
             {/* Locations */}
             <Grid item xs={12} sm={6} md={3}>
@@ -536,6 +670,71 @@ export function DashboardPage() {
                 </Typography>
               </Paper>
             </Grid>
+
+            {/* App adoption (30 days) */}
+            <Grid item xs={12} sm={6} md={3}>
+              <Paper
+                elevation={0}
+                sx={{
+                  p: 2,
+                  borderRadius: 2,
+                  border: "1px solid",
+                  borderColor: "divider",
+                }}
+              >
+                <Typography variant="subtitle2" color="text.secondary">
+                  App adoption (30 days)
+                </Typography>
+                {appAdoptionLoading || !appAdoption ? (
+                  <>
+                    <Typography variant="h4">–</Typography>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      display="block"
+                    >
+                      Loading app-linked sessions…
+                    </Typography>
+                  </>
+                ) : appAdoption.total === 0 ? (
+                  <>
+                    <Typography variant="h4">0%</Typography>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      display="block"
+                    >
+                      No sessions recorded in last 30 days
+                    </Typography>
+                  </>
+                ) : (
+                  <>
+                    <Typography variant="h4">
+                      {Math.round(
+                        (appAdoption.withApp / appAdoption.total) * 100
+                      )}
+                      %
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      display="block"
+                    >
+                      {appAdoption.withApp} of {appAdoption.total} sessions
+                      with app data
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      display="block"
+                    >
+                      {appAdoption.uniqueUnitsWithApp} units saw app
+                      sessions
+                    </Typography>
+                  </>
+                )}
+              </Paper>
+            </Grid>
           </Grid>
 
           {/* Row 2: brands / campaigns / engagement */}
@@ -642,6 +841,140 @@ export function DashboardPage() {
             </Grid>
           </Grid>
 
+          {/* Row 2.5: App insights */}
+          <Box sx={{ mb: 3 }}>
+            <Paper
+              elevation={0}
+              sx={{
+                p: 2,
+                borderRadius: 2,
+                border: "1px solid",
+                borderColor: "divider",
+              }}
+            >
+              <Typography variant="subtitle1" gutterBottom>
+                App insights (last 30 days)
+              </Typography>
+
+              {appAdoptionLoading || !appAdoption ? (
+                <Typography variant="body2" color="text.secondary">
+                  Loading app usage insights…
+                </Typography>
+              ) : appAdoption.total === 0 ? (
+                <Typography variant="body2" color="text.secondary">
+                  No sessions recorded in the last 30 days.
+                </Typography>
+              ) : (
+                <>
+                  <Grid container spacing={2} sx={{ mb: 2 }}>
+                    <Grid item xs={12} sm={6} md={3}>
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                      >
+                        App adoption
+                      </Typography>
+                      <Typography variant="h5">
+                        {Math.round(
+                          (appAdoption.withApp / appAdoption.total) *
+                            100
+                        )}
+                        %
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                      >
+                        {appAdoption.withApp} of {appAdoption.total}{" "}
+                        sessions
+                      </Typography>
+                    </Grid>
+
+                    <Grid item xs={12} sm={6} md={3}>
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                      >
+                        Units with app sessions
+                      </Typography>
+                      <Typography variant="h5">
+                        {appAdoption.uniqueUnitsWithApp}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                      >
+                        Devices that saw at least one app-linked
+                        session
+                      </Typography>
+                    </Grid>
+
+                    <Grid item xs={12} sm={6} md={3}>
+                      <Typography
+                        variant="body2"
+                        color="text.secondary"
+                      >
+                        Avg battery delta (app)
+                      </Typography>
+                      <Typography variant="h5">
+                        {appAvgBatteryDelta30 != null
+                          ? `${appAvgBatteryDelta30.toFixed(0)}%`
+                          : "–"}
+                      </Typography>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                      >
+                        Where <code>appBatteryDelta</code> was
+                        reported
+                      </Typography>
+                    </Grid>
+                  </Grid>
+
+                  <Typography variant="subtitle2" gutterBottom>
+                    Top locations by app-linked sessions
+                  </Typography>
+                  <TableContainer>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>Location (from app)</TableCell>
+                          <TableCell align="right">
+                            App sessions
+                          </TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {appTopLocations30.map((row) => (
+                          <TableRow key={row.locationLabel}>
+                            <TableCell>{row.locationLabel}</TableCell>
+                            <TableCell align="right">
+                              {row.sessions}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                        {appTopLocations30.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={2}>
+                              <Typography
+                                align="center"
+                                variant="body2"
+                                color="text.secondary"
+                                sx={{ py: 1 }}
+                              >
+                                No app location data yet.
+                              </Typography>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </>
+              )}
+            </Paper>
+          </Box>
+
           {/* Row 3: Top campaigns + brand slice */}
           <Box sx={{ mb: 3 }}>
             <Grid container spacing={2}>
@@ -665,15 +998,21 @@ export function DashboardPage() {
                         <TableRow>
                           <TableCell>Brand</TableCell>
                           <TableCell>Campaign</TableCell>
-                          <TableCell align="right">Engagements</TableCell>
+                          <TableCell align="right">
+                            Engagements
+                          </TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
                         {topCampaigns.map((c, idx) => (
-                          <TableRow key={`${c.brandName}-${c.campaignName}-${idx}`}>
+                          <TableRow
+                            key={`${c.brandName}-${c.campaignName}-${idx}`}
+                          >
                             <TableCell>{c.brandName}</TableCell>
                             <TableCell>{c.campaignName}</TableCell>
-                            <TableCell align="right">{c.engagements}</TableCell>
+                            <TableCell align="right">
+                              {c.engagements}
+                            </TableCell>
                           </TableRow>
                         ))}
                         {topCampaigns.length === 0 && (
@@ -715,8 +1054,12 @@ export function DashboardPage() {
                       <TableHead>
                         <TableRow>
                           <TableCell>Brand</TableCell>
-                          <TableCell align="right">Engagements</TableCell>
-                          <TableCell align="right">Campaigns</TableCell>
+                          <TableCell align="right">
+                            Engagements
+                          </TableCell>
+                          <TableCell align="right">
+                            Campaigns
+                          </TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -782,7 +1125,9 @@ export function DashboardPage() {
                     <TableCell>Status</TableCell>
                     <TableCell>Started</TableCell>
                     <TableCell>Ended</TableCell>
-                    <TableCell align="right">Duration (min)</TableCell>
+                    <TableCell align="right">
+                      Duration (min)
+                    </TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -808,7 +1153,9 @@ export function DashboardPage() {
                             }
                             size="small"
                             color={
-                              s.status === "completed" ? "success" : "info"
+                              s.status === "completed"
+                                ? "success"
+                                : "info"
                             }
                           />
                         ) : (

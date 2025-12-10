@@ -91,6 +91,11 @@ export function UnitsListPage() {
 
           const healthStatus = health.status as string | undefined;
 
+          const positionField =
+                (metrics.position as string | undefined) ??
+                (data.position as string | undefined) ??
+                undefined;
+
           const lastHeartbeat = tsToDate(data.lastHeartbeat);
           const lastInteraction = tsToDate(data.lastInteraction);
           const lastSessionTimestamp = tsToDate(data.lastSessionTimestamp);
@@ -124,7 +129,7 @@ export function UnitsListPage() {
               (metrics.name as string | undefined) ??
               (data.name as string | undefined) ??
               docSnap.id,
-            position: metrics.position as string | undefined,
+            position: positionField,
             status,
             inUse: (data.inUse as boolean | undefined) ?? false,
 

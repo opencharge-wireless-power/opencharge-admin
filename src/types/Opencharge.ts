@@ -15,6 +15,10 @@ export interface Location {
   category?: string;
   active: boolean;
 
+  brand?: string;          
+  storeLocation?: string;  
+  qrCode?: string;         
+
   hasActivePromotion: boolean;
   hasActivePromotions: boolean;
 
@@ -44,6 +48,11 @@ export interface EditFormState {
   city: string;
   country: string;
   category: string;
+  
+  brand: string;
+  storeLocation: string;
+  qrCode: string;
+
   priority: string;
   lat: string;
   lng: string;
@@ -202,4 +211,25 @@ export interface UnitLookup {
   name: string;
   locationId?: string;
   particleDeviceId?: string;
+}
+
+export interface StoreEngageCampaign {
+  id: string;          // Firestore doc id under .../stores/{storeSlug}/campaigns/{id}
+  campaignId: string;  // canonical id shared across stores
+  name: string;
+  active: boolean;
+  engagements: number;
+  url?: string;
+  targetUrl?: string;
+  brandSlug: string;
+  storeSlug: string;
+  locationId: string;
+}
+
+export interface EngageCampaignAggregate {
+  campaignId: string;
+  name: string;
+  activeStoreCount: number;
+  totalStoreCount: number;
+  totalEngagements: number;
 }

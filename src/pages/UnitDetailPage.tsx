@@ -7,7 +7,6 @@ import {
   getDoc,
   getDocs,
   query,
-  orderBy,
   where,
   limit,
   type DocumentData,
@@ -29,12 +28,14 @@ import {
   TableBody,
   TableContainer,
   Button,
+  Drawer,
+  Divider,
 } from "@mui/material";
 import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 
 import { db } from "../firebase";
 import { MainLayout } from "../components/layout/MainLayout";
-import type { Unit } from "../types/Opencharge"; // adjust path if needed
+import type { Unit } from "../types/Opencharge";
 
 // ----- helpers -----
 function tsToDate(value: any): Date | undefined {
@@ -45,6 +46,12 @@ function tsToDate(value: any): Date | undefined {
 
 function numOrUndefined(v: any): number | undefined {
   return typeof v === "number" && !Number.isNaN(v) ? v : undefined;
+}
+
+function dateFromMs(value: any): Date | undefined {
+  return typeof value === "number" && value > 0
+    ? new Date(value)
+    : undefined;
 }
 
 function formatDate(date?: Date): string {
@@ -82,6 +89,27 @@ interface SessionRow {
   mode?: string;
   deviceType?: string;
   status?: string;
+
+  // app-level fields stored on the chargesessions doc
+  appLinked?: boolean;
+  appBatteryDelta?: number;
+  appBatteryStartLevel?: number;
+  appBatteryEndLevel?: number;
+  appDeviceMake?: string;
+  appDeviceModel?: string;
+  appLocationId?: string;
+}
+
+interface AppChargingEventRow {
+  id: string;
+  time?: Date;
+  batteryLevel?: number;
+  batteryDelta?: number;
+  isWireless?: boolean;
+  pluggedType?: string;
+  deviceMake?: string;
+  deviceModel?: string;
+  locationId?: string;
 }
 
 interface InteractionRow {
@@ -90,11 +118,18 @@ interface InteractionRow {
   type?: string;
   mode?: string;
   deviceType?: string;
+
+  // app-level fields on the interaction
+  appLinked?: boolean;
+  appBatteryStartLevel?: number;
+  appDeviceMake?: string;
+  appDeviceModel?: string;
+  appSource?: string;
+  appDeviceIdHash?: string;
 }
 
 // ----- component -----
 export function UnitDetailPage() {
-  // route param MUST match App.tsx: /units/:id
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
@@ -111,6 +146,28 @@ export function UnitDetailPage() {
   const [interactionsError, setInteractionsError] = useState<string | null>(
     null
   );
+
+  // Drawer state for details
+  const [selectedSession, setSelectedSession] = useState<SessionRow | null>(
+    null
+  );
+  const [selectedInteraction, setSelectedInteraction] =
+    useState<InteractionRow | null>(null);
+  const [sessionAppEvents, setSessionAppEvents] = useState<
+    AppChargingEventRow[]
+  >([]);
+  const [drawerLoading, setDrawerLoading] = useState(false);
+  const [drawerError, setDrawerError] = useState<string | null>(null);
+
+  const drawerOpen = Boolean(selectedSession || selectedInteraction);
+
+  const closeDrawer = () => {
+    if (drawerLoading) return;
+    setSelectedSession(null);
+    setSelectedInteraction(null);
+    setSessionAppEvents([]);
+    setDrawerError(null);
+  };
 
   // -------- load unit ----------
   useEffect(() => {
@@ -167,7 +224,9 @@ export function UnitDetailPage() {
             (metrics.name as string | undefined) ??
             (data.name as string | undefined) ??
             snap.id,
-          position: metrics.position as string | undefined,
+          position:
+            (metrics.position as string | undefined) ??
+            (data.position as string | undefined),
           status,
           inUse: (data.inUse as boolean | undefined) ?? false,
 
@@ -234,136 +293,226 @@ export function UnitDetailPage() {
     const deviceId = unit.particleDeviceId;
 
     const loadSessions = async () => {
-  try {
-    setSessionsLoading(true);
-    setSessionsError(null);
+      try {
+        setSessionsLoading(true);
+        setSessionsError(null);
 
-    const ref = collection(db, "chargesessions");
+        const ref = collection(db, "chargesessions");
+        const qSessions = query(ref, where("id", "==", deviceId), limit(50));
+        const snap = await getDocs(qSessions);
 
-    // No orderBy here – just filter by device and limit,
-    // then sort client-side.
-    const q = query(
-      ref,
-      where("id", "==", deviceId),
-      limit(50)
-    );
+        const rows: SessionRow[] = snap.docs.map((docSnap) => {
+          const data = docSnap.data() as DocumentData;
+          const start = tsToDate(data.start);
+          const end = tsToDate(data.end);
+          const durationMinutes = numOrUndefined(data.duration);
 
-    const snap = await getDocs(q);
+          return {
+            id: docSnap.id,
+            start,
+            end,
+            durationMinutes,
+            mode: data.mode as string | undefined,
+            deviceType: data.deviceType as string | undefined,
+            status: end ? "completed" : "in_progress",
 
-    const rows: SessionRow[] = snap.docs.map((docSnap) => {
-      const data = docSnap.data() as DocumentData;
-      const start = tsToDate(data.start);
-      const end = tsToDate(data.end);
-      const durationMinutes = numOrUndefined(data.duration);
+            appLinked: data.appLinked as boolean | undefined,
+            appBatteryDelta: numOrUndefined(data.appBatteryDelta),
+            appBatteryStartLevel: numOrUndefined(data.appBatteryStartLevel),
+            appBatteryEndLevel: numOrUndefined(data.appBatteryEndLevel),
+            appDeviceMake: data.appDeviceMake as string | undefined,
+            appDeviceModel: data.appDeviceModel as string | undefined,
+            appLocationId: data.appLocationId as string | undefined,
+          };
+        });
 
-      return {
-        id: docSnap.id,
-        start,
-        end,
-        durationMinutes,
-        mode: data.mode as string | undefined,
-        deviceType: data.deviceType as string | undefined,
-        status: end ? "completed" : "in_progress",
-      };
-    });
+        rows.sort((a, b) => {
+          const ta = a.start?.getTime() ?? 0;
+          const tb = b.start?.getTime() ?? 0;
+          return tb - ta;
+        });
 
-    // sort newest first by start date, then take top 10
-    rows.sort((a, b) => {
-      const ta = a.start?.getTime() ?? 0;
-      const tb = b.start?.getTime() ?? 0;
-      return tb - ta;
-    });
+        setSessions(rows.slice(0, 10));
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : "Failed to load sessions";
+        setSessionsError(msg);
+      } finally {
+        setSessionsLoading(false);
+      }
+    };
 
-    setSessions(rows.slice(0, 10));
-  } catch (err) {
-    const msg =
-      err instanceof Error ? err.message : "Failed to load sessions";
-    setSessionsError(msg);
-  } finally {
-    setSessionsLoading(false);
-  }
-};
-const loadInteractions = async () => {
-    if (!deviceId || !unit?.particleDeviceId) {
-      setInteractions([]);
-      return;
-    }
+    const loadInteractions = async () => {
+      try {
+        setInteractionsLoading(true);
+        setInteractionsError(null);
 
-   try {
-      setInteractionsLoading(true);
-      setInteractionsError(null);
+        const interactionsRef = collection(db, "interactions");
+        const qInteractions = query(
+          interactionsRef,
+          where("deviceId", "==", deviceId),
+          limit(50)
+        );
+        const snap = await getDocs(qInteractions);
 
-      const interactionsRef = collection(db, "interactions");
+        const rows: InteractionRow[] = snap.docs.map((docSnap) => {
+          const data = docSnap.data() as DocumentData;
 
-      // Get all interactions for this unit — no orderBy, so no index needed
-      const q = query(interactionsRef, where("deviceId", "==", deviceId));
-      const snap = await getDocs(q);
+          let time: Date | undefined;
+          const tsRaw = data.timestamp;
 
-      const rows = snap.docs.map((docSnap) => {
-        const data = docSnap.data() as DocumentData;
-
-        let time: Date | undefined;
-        const tsRaw = data.timestamp;
-
-        // A) Firestore Timestamp
-        if (tsRaw && typeof tsRaw.toDate === "function") {
-          time = tsRaw.toDate();
-        }
-        // B) numeric milliseconds
-        else if (typeof tsRaw === "number") {
-          time = new Date(tsRaw);
-        }
-        // C) String like: "3 December 2025 at 16:00:53 UTC+2"
-        else if (typeof tsRaw === "string") {
-          const cleaned = tsRaw.replace(" at ", " ");
-          const parsed = new Date(cleaned);
-          if (!isNaN(parsed.getTime())) {
-            time = parsed;
-          }
-        }
-
-        // D) Fallback using dateISO + hourOfDay
-        if (!time) {
-          const dateISO = data.dateISO;
-          const hour = data.hourOfDay;
-          if (dateISO && typeof hour === "number") {
-            const h = hour.toString().padStart(2, "0");
-            const fallback = new Date(`${dateISO}T${h}:00:00Z`);
-            if (!isNaN(fallback.getTime())) {
-              time = fallback;
+          if (tsRaw && typeof tsRaw.toDate === "function") {
+            time = tsRaw.toDate();
+          } else if (typeof tsRaw === "number") {
+            time = new Date(tsRaw);
+          } else if (typeof tsRaw === "string") {
+            const cleaned = tsRaw.replace(" at ", " ");
+            const parsed = new Date(cleaned);
+            if (!isNaN(parsed.getTime())) {
+              time = parsed;
             }
           }
-        }
 
-        return {
-          id: docSnap.id,
-          time,
-          type: data.type,
-          mode: data.mode,
-          deviceType: data.deviceType,
-        };
-      });
+          if (!time) {
+            const dateISO = data.dateISO;
+            const hour = data.hourOfDay;
+            if (dateISO && typeof hour === "number") {
+              const h = hour.toString().padStart(2, "0");
+              const fallback = new Date(`${dateISO}T${h}:00:00Z`);
+              if (!isNaN(fallback.getTime())) {
+                time = fallback;
+              }
+            }
+          }
 
-      // Sort newest → oldest using JS
-      rows.sort((a, b) => {
-        const ta = a.time?.getTime() ?? 0;
-        const tb = b.time?.getTime() ?? 0;
-        return tb - ta;
-      });
+          return {
+            id: docSnap.id,
+            time,
+            type: data.type as string | undefined,
+            mode: data.mode as string | undefined,
+            deviceType: data.deviceType as string | undefined,
 
-      // Only keep the latest 10
-      setInteractions(rows.slice(0, 10));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to load interactions";
-      setInteractionsError(msg);
-    } finally {
-      setInteractionsLoading(false);
-    }
-  };
+            appLinked: data.appLinked as boolean | undefined,
+            appBatteryStartLevel: numOrUndefined(data.appBatteryStartLevel),
+            appDeviceMake: data.appDeviceMake as string | undefined,
+            appDeviceModel: data.appDeviceModel as string | undefined,
+            appSource: data.appSource as string | undefined,
+            appDeviceIdHash: data.appDeviceIdHash as string | undefined,
+          };
+        });
+
+        rows.sort((a, b) => {
+          const ta = a.time?.getTime() ?? 0;
+          const tb = b.time?.getTime() ?? 0;
+          return tb - ta;
+        });
+
+        setInteractions(rows.slice(0, 10));
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : "Failed to load interactions";
+        setInteractionsError(msg);
+      } finally {
+        setInteractionsLoading(false);
+      }
+    };
 
     void loadSessions();
     void loadInteractions();
   }, [unit?.particleDeviceId]);
+
+  // -------- handlers to open drawer --------
+  const handleSessionRowClick = async (session: SessionRow) => {
+    setSelectedInteraction(null);
+    setSelectedSession(session);
+    setSessionAppEvents([]);
+    setDrawerError(null);
+
+    try {
+      setDrawerLoading(true);
+      const sessionRef = doc(db, "chargesessions", session.id);
+      const eventsRef = collection(sessionRef, "appChargingEvents");
+      const eventsSnap = await getDocs(eventsRef);
+
+      const events: AppChargingEventRow[] = eventsSnap.docs.map((docSnap) => {
+        const data = docSnap.data() as DocumentData;
+        return {
+          id: docSnap.id,
+          time: dateFromMs(data.timestampMs) ?? dateFromMs(data.startTimestampMs),
+          batteryLevel: numOrUndefined(data.batteryLevel),
+          batteryDelta: numOrUndefined(data.batteryDelta),
+          isWireless: data.isWireless as boolean | undefined,
+          pluggedType: data.pluggedType as string | undefined,
+          deviceMake: data.deviceMake as string | undefined,
+          deviceModel: data.deviceModel as string | undefined,
+          locationId: data.locationId as string | undefined,
+        };
+      });
+
+      events.sort((a, b) => {
+        const ta = a.time?.getTime() ?? 0;
+        const tb = b.time?.getTime() ?? 0;
+        return ta - tb;
+      });
+
+      setSessionAppEvents(events);
+    } catch (err) {
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "Failed to load app charging events";
+      setDrawerError(msg);
+    } finally {
+      setDrawerLoading(false);
+    }
+  };
+
+  const handleInteractionRowClick = (interaction: InteractionRow) => {
+    setSelectedSession(null);
+    setSessionAppEvents([]);
+    setDrawerError(null);
+    setSelectedInteraction(interaction);
+  };
+
+  // ---- helpers to render "App" chip in tables ----
+  function renderSessionAppCell(s: SessionRow) {
+    const start = s.appBatteryStartLevel;
+    const end = s.appBatteryEndLevel;
+    const delta =
+      s.appBatteryDelta ??
+      (start != null && end != null ? end - start : undefined);
+
+    const hasApp =
+      s.appLinked ||
+      s.appDeviceMake ||
+      s.appDeviceModel ||
+      start != null ||
+      end != null ||
+      delta != null;
+
+    if (!hasApp) return "—";
+
+    const label =
+      delta != null
+        ? `App (${delta > 0 ? "+" : ""}${delta}% )`
+        : "App";
+
+    return <Chip label={label} size="small" color="primary" />;
+  }
+
+  function renderInteractionAppCell(i: InteractionRow) {
+    const hasApp =
+      i.appLinked ||
+      i.appDeviceMake ||
+      i.appDeviceModel ||
+      i.appBatteryStartLevel != null ||
+      i.appSource ||
+      i.appDeviceIdHash;
+
+    if (!hasApp) return "—";
+
+    return <Chip label="App" size="small" color="primary" />;
+  }
 
   // ---------- simple guards ----------
   if (!id) {
@@ -403,6 +552,343 @@ const loadInteractions = async () => {
       </MainLayout>
     );
   }
+
+  // ---------- drawer render helpers ----------
+  const renderSessionDrawer = (session: SessionRow) => {
+    const hasApp =
+      session.appLinked ||
+      session.appBatteryDelta != null ||
+      session.appDeviceMake ||
+      session.appDeviceModel;
+
+    const startLevel = session.appBatteryStartLevel;
+    const endLevel = session.appBatteryEndLevel;
+    const delta =
+      session.appBatteryDelta ??
+      (startLevel != null && endLevel != null
+        ? endLevel - startLevel
+        : undefined);
+
+    return (
+      <Box sx={{ p: 3, width: "100%", boxSizing: "border-box" }}>
+        <Typography variant="h6" gutterBottom>
+          Session details
+        </Typography>
+
+        <Grid container spacing={2} sx={{ mb: 2 }}>
+          {/* Summary card */}
+          <Grid item xs={12} md={6}>
+            <Card>
+              <CardContent>
+                <Typography variant="subtitle1" gutterBottom>
+                  Summary
+                </Typography>
+
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Status
+                  </Typography>
+                  <Typography variant="body1">
+                    {session.status ?? "—"}
+                  </Typography>
+                </Box>
+
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Started
+                  </Typography>
+                  <Typography variant="body1">
+                    {formatDateTime(session.start)}
+                  </Typography>
+                </Box>
+
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Ended
+                  </Typography>
+                  <Typography variant="body1">
+                    {formatDateTime(session.end)}
+                  </Typography>
+                </Box>
+
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Duration
+                  </Typography>
+                  <Typography variant="body1">
+                    {session.durationMinutes != null
+                      ? `${session.durationMinutes.toFixed(0)} min`
+                      : "—"}
+                  </Typography>
+                </Box>
+
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Mode / device
+                  </Typography>
+                  <Typography variant="body1">
+                    {(session.mode ?? "—") +
+                      " · " +
+                      (session.deviceType ?? "—")}
+                  </Typography>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          {/* App summary card */}
+          <Grid item xs={12} md={6}>
+            <Card>
+              <CardContent>
+                <Typography variant="subtitle1" gutterBottom>
+                  App summary
+                </Typography>
+
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    App linked
+                  </Typography>
+                  <Typography variant="body1">
+                    {session.appLinked ? "Yes" : "No"}
+                  </Typography>
+                </Box>
+
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Device
+                  </Typography>
+                  <Typography variant="body1">
+                    {session.appDeviceMake || session.appDeviceModel
+                      ? `${session.appDeviceMake ?? ""}${
+                          session.appDeviceMake && session.appDeviceModel
+                            ? " "
+                            : ""
+                        }${session.appDeviceModel ?? ""}`
+                      : "—"}
+                  </Typography>
+                </Box>
+
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    App location
+                  </Typography>
+                  <Typography variant="body1">
+                    {session.appLocationId ?? "—"}
+                  </Typography>
+                </Box>
+
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Battery change
+                  </Typography>
+                  <Typography variant="body1">
+                    {startLevel != null && endLevel != null ? (
+                      <>
+                        {startLevel}% → {endLevel}%{" "}
+                        {delta != null && `(${delta > 0 ? "+" : ""}${delta}%)`}
+                      </>
+                    ) : delta != null ? (
+                      `${delta > 0 ? "+" : ""}${delta}%`
+                    ) : (
+                      "—"
+                    )}
+                  </Typography>
+                </Box>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+
+        <Divider sx={{ my: 2 }} />
+
+        <Typography variant="subtitle1" gutterBottom>
+          App charging events
+        </Typography>
+
+        {drawerLoading && (
+          <Box sx={{ display: "flex", justifyContent: "center", my: 2 }}>
+            <CircularProgress size={20} />
+          </Box>
+        )}
+
+        {drawerError && (
+          <Typography color="error" sx={{ mb: 1 }}>
+            {drawerError}
+          </Typography>
+        )}
+
+        {!drawerLoading && !drawerError && !hasApp && sessionAppEvents.length === 0 && (
+          <Typography variant="body2" color="text.secondary">
+            No app data recorded for this session.
+          </Typography>
+        )}
+
+        {!drawerLoading && !drawerError && sessionAppEvents.length > 0 && (
+          <TableContainer
+            component={Paper}
+            sx={{
+              borderRadius: 2,
+              border: "1px solid",
+              borderColor: "divider",
+              mt: 1,
+            }}
+          >
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>Time</TableCell>
+                  <TableCell>Battery</TableCell>
+                  <TableCell>Wireless</TableCell>
+                  <TableCell>Plugged type</TableCell>
+                  <TableCell>Device</TableCell>
+                  <TableCell>Location (app)</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {sessionAppEvents.map((e) => (
+                  <TableRow key={e.id}>
+                    <TableCell>{formatDateTime(e.time)}</TableCell>
+                    <TableCell>
+                      {e.batteryLevel != null ? `${e.batteryLevel}%` : "—"}
+                      {e.batteryDelta != null &&
+                        ` (${e.batteryDelta > 0 ? "+" : ""}${
+                          e.batteryDelta
+                        }%)`}
+                    </TableCell>
+                    <TableCell>{e.isWireless ? "Yes" : "No"}</TableCell>
+                    <TableCell>{e.pluggedType ?? "—"}</TableCell>
+                    <TableCell>
+                      {e.deviceMake || e.deviceModel
+                        ? `${e.deviceMake ?? ""}${
+                            e.deviceMake && e.deviceModel ? " " : ""
+                          }${e.deviceModel ?? ""}`
+                        : "—"}
+                    </TableCell>
+                    <TableCell>{e.locationId ?? "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+      </Box>
+    );
+  };
+
+  const renderInteractionDrawer = (interaction: InteractionRow) => (
+    <Box sx={{ p: 3, width: "100%", boxSizing: "border-box" }}>
+      <Typography variant="h6" gutterBottom>
+        Interaction details
+      </Typography>
+
+      <Grid container spacing={2}>
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="subtitle1" gutterBottom>
+                Summary
+              </Typography>
+
+              <Box sx={{ mb: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Time
+                </Typography>
+                <Typography variant="body1">
+                  {formatDateTime(interaction.time)}
+                </Typography>
+              </Box>
+
+              <Box sx={{ mb: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Type
+                </Typography>
+                <Typography variant="body1">
+                  {interaction.type ?? "—"}
+                </Typography>
+              </Box>
+
+              <Box sx={{ mb: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Mode / device
+                </Typography>
+                <Typography variant="body1">
+                  {(interaction.mode ?? "—") +
+                    " · " +
+                    (interaction.deviceType ?? "—")}
+                </Typography>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12} md={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="subtitle1" gutterBottom>
+                App details
+              </Typography>
+
+              <Box sx={{ mb: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  App linked
+                </Typography>
+                <Typography variant="body1">
+                  {interaction.appLinked ? "Yes" : "No"}
+                </Typography>
+              </Box>
+
+              <Box sx={{ mb: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Device
+                </Typography>
+                <Typography variant="body1">
+                  {interaction.appDeviceMake || interaction.appDeviceModel
+                    ? `${interaction.appDeviceMake ?? ""}${
+                        interaction.appDeviceMake && interaction.appDeviceModel
+                          ? " "
+                          : ""
+                      }${interaction.appDeviceModel ?? ""}`
+                    : "—"}
+                </Typography>
+              </Box>
+
+              <Box sx={{ mb: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  App battery level
+                </Typography>
+                <Typography variant="body1">
+                  {interaction.appBatteryStartLevel != null
+                    ? `${interaction.appBatteryStartLevel}%`
+                    : "—"}
+                </Typography>
+              </Box>
+
+              <Box sx={{ mb: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  App source
+                </Typography>
+                <Typography variant="body1">
+                  {interaction.appSource ?? "—"}
+                </Typography>
+              </Box>
+
+              <Box>
+                <Typography variant="body2" color="text.secondary">
+                  Device hash
+                </Typography>
+                <Typography
+                  variant="body2"
+                  sx={{ fontFamily: "monospace", wordBreak: "break-all" }}
+                >
+                  {interaction.appDeviceIdHash ?? "—"}
+                </Typography>
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
+    </Box>
+  );
 
   // ---------- main UI ----------
   return (
@@ -665,6 +1151,7 @@ const loadInteractions = async () => {
                 <TableRow>
                   <TableCell>Start</TableCell>
                   <TableCell>End</TableCell>
+                  <TableCell>App</TableCell>
                   <TableCell>Mode</TableCell>
                   <TableCell>Device type</TableCell>
                   <TableCell>Status</TableCell>
@@ -673,9 +1160,15 @@ const loadInteractions = async () => {
               </TableHead>
               <TableBody>
                 {sessions.map((s) => (
-                  <TableRow key={s.id}>
+                  <TableRow
+                    key={s.id}
+                    hover
+                    sx={{ cursor: "pointer" }}
+                    onClick={() => handleSessionRowClick(s)}
+                  >
                     <TableCell>{formatDateTime(s.start)}</TableCell>
                     <TableCell>{formatDateTime(s.end)}</TableCell>
+                    <TableCell>{renderSessionAppCell(s)}</TableCell>
                     <TableCell>{s.mode ?? "—"}</TableCell>
                     <TableCell>{s.deviceType ?? "—"}</TableCell>
                     <TableCell>{s.status ?? "—"}</TableCell>
@@ -689,7 +1182,7 @@ const loadInteractions = async () => {
 
                 {sessions.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6}>
+                    <TableCell colSpan={7}>
                       <Typography
                         align="center"
                         variant="body2"
@@ -741,21 +1234,28 @@ const loadInteractions = async () => {
                   <TableCell>Type</TableCell>
                   <TableCell>Mode</TableCell>
                   <TableCell>Device type</TableCell>
+                  <TableCell>App</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {interactions.map((i) => (
-                  <TableRow key={i.id}>
+                  <TableRow
+                    key={i.id}
+                    hover
+                    sx={{ cursor: "pointer" }}
+                    onClick={() => handleInteractionRowClick(i)}
+                  >
                     <TableCell>{formatDateTime(i.time)}</TableCell>
                     <TableCell>{i.type ?? "—"}</TableCell>
                     <TableCell>{i.mode ?? "—"}</TableCell>
                     <TableCell>{i.deviceType ?? "—"}</TableCell>
+                    <TableCell>{renderInteractionAppCell(i)}</TableCell>
                   </TableRow>
                 ))}
 
                 {interactions.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={4}>
+                    <TableCell colSpan={5}>
                       <Typography
                         align="center"
                         variant="body2"
@@ -772,6 +1272,21 @@ const loadInteractions = async () => {
           </TableContainer>
         )}
       </Box>
+
+      {/* Right-hand details drawer */}
+      <Drawer
+        anchor="right"
+        open={drawerOpen}
+        onClose={closeDrawer}
+        PaperProps={{
+          sx: { width: { xs: "100%", sm: 520, md: 640, lg: 720 } },
+        }}
+      >
+        {selectedSession && renderSessionDrawer(selectedSession)}
+        {!selectedSession &&
+          selectedInteraction &&
+          renderInteractionDrawer(selectedInteraction)}
+      </Drawer>
     </MainLayout>
   );
 }

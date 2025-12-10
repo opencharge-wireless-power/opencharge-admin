@@ -68,7 +68,7 @@ export function App() {
           path="/campaigns/:brandId/:campaignId"
           element={<CampaignDetailPage />}
         />
-          
+      
           
           <Route
             path="/units"

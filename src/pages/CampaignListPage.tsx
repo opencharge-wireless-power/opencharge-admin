@@ -52,6 +52,9 @@ interface Brand {
 interface LocationItem {
   id: string;
   name: string;
+  brand?: string;
+  storeLocation?: string;
+  qrCode?: string;
 }
 
 interface CampaignListItem {
@@ -65,6 +68,26 @@ interface CampaignListItem {
   url?: string;
   targetUrl?: string;
   createdAt?: Date;
+}
+
+const slugify = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/^-+|-+$/g, "");
+
+// If a location doesn't have qrCode stored, fall back to derived one
+function deriveQrCodeFromLocation(data: DocumentData, id: string): string | undefined {
+  const brand = (data.brand as string | undefined) ?? "";
+  const storeLocation = (data.storeLocation as string | undefined) ?? "";
+  if (!brand || !storeLocation) return undefined;
+
+  const brandSlug = slugify(brand);
+  const storeSlug = slugify(storeLocation);
+  if (!brandSlug || !storeSlug) return undefined;
+
+  return `https://opencharge.io/e/${brandSlug}/${storeSlug}`;
 }
 
 export function CampaignListPage() {
@@ -91,8 +114,6 @@ export function CampaignListPage() {
   const [newCampaignName, setNewCampaignName] = useState("");
   const [newCampaignDescription, setNewCampaignDescription] = useState("");
   const [newCampaignTargetUrl, setNewCampaignTargetUrl] = useState("");
-  const [newCampaignUrl, setNewCampaignUrl] =
-    useState("https://links.opencharge.app/c");
   const [newCampaignActive, setNewCampaignActive] = useState(true);
   const [newCampaignLocationIds, setNewCampaignLocationIds] = useState<string[]>(
     []
@@ -139,9 +160,15 @@ export function CampaignListPage() {
         const snap = await getDocs(collection(db, "locations"));
         const items: LocationItem[] = snap.docs.map((docSnap) => {
           const data = docSnap.data() as DocumentData;
+          const explicitQr = data.qrCode as string | undefined;
+          const derivedQr = deriveQrCodeFromLocation(data, docSnap.id);
+
           return {
             id: docSnap.id,
             name: (data.name as string | undefined) ?? docSnap.id,
+            brand: data.brand as string | undefined,
+            storeLocation: data.storeLocation as string | undefined,
+            qrCode: explicitQr ?? derivedQr,
           };
         });
         items.sort((a, b) => a.name.localeCompare(b.name));
@@ -245,7 +272,7 @@ export function CampaignListPage() {
       setBrandSaving(true);
       setBrandSaveError(null);
 
-      // Use brand name as document ID
+      // Use brand name as document ID (can be updated to slug later)
       const brandId = rawName;
       const brandRef = doc(db, "engage", brandId);
       await setDoc(brandRef, {
@@ -280,7 +307,6 @@ export function CampaignListPage() {
     setNewCampaignName("");
     setNewCampaignDescription("");
     setNewCampaignTargetUrl("");
-    setNewCampaignUrl("https://links.opencharge.app/c");
     setNewCampaignActive(true);
     setNewCampaignLocationIds([]);
     setCampaignSaveError(null);
@@ -311,6 +337,7 @@ export function CampaignListPage() {
       setCampaignSaving(true);
       setCampaignSaveError(null);
 
+      // 1) Create brand-level campaign (no QR URL here – QR comes from locations)
       const campaignsRef = collection(
         db,
         "engage",
@@ -323,11 +350,50 @@ export function CampaignListPage() {
         active: newCampaignActive,
         engagements: 0,
         locationIds: newCampaignLocationIds,
-        url: newCampaignUrl.trim(),
+        // url intentionally omitted: QR is location-specific
         targetUrl: newCampaignTargetUrl.trim(),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+
+      const campaignId = docRef.id;
+
+      // 2) For each selected location, create a store-level Engage campaign doc
+      for (const locId of newCampaignLocationIds) {
+        const loc = locations.find((l) => l.id === locId);
+        if (!loc || !loc.brand || !loc.storeLocation) {
+          continue; // skip if we don't have enough info
+        }
+
+        const brandSlug = slugify(loc.brand);
+        const storeSlug = slugify(loc.storeLocation);
+
+        const storeCampaignsRef = collection(
+          db,
+          "engage",
+          brandSlug,
+          "stores",
+          storeSlug,
+          "campaigns"
+        );
+
+        // QR URL should come from location.qrCode
+        const qrUrl = loc.qrCode ?? undefined;
+
+        await addDoc(storeCampaignsRef, {
+          campaignId,
+          name: newCampaignName.trim(),
+          active: newCampaignActive,
+          engagements: 0,
+          url: qrUrl ?? null,
+          targetUrl: newCampaignTargetUrl.trim() || null,
+          locationId: loc.id,
+          brandSlug,
+          storeSlug,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
 
       setCampaignDialogOpen(false);
 
@@ -598,14 +664,15 @@ export function CampaignListPage() {
               </Select>
             </FormControl>
 
-            <TextField
-              label="Short URL (QR)"
-              fullWidth
-              margin="normal"
-              value={newCampaignUrl}
-              onChange={(e) => setNewCampaignUrl(e.target.value)}
-              helperText="Printed on the QR sticker (e.g. links.opencharge.app)."
-            />
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ mt: 1.5 }}
+            >
+              QR URL is taken from each location’s QR code and does not need to
+              be configured here. You only set the final target URL for the
+              campaign.
+            </Typography>
 
             <TextField
               label="Target URL"
