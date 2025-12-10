@@ -9,19 +9,27 @@ import {
 import {
   Box,
   Typography,
-  Grid,
-  Paper,
   CircularProgress,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Chip,
+
 } from "@mui/material";
 import { db } from "../firebase";
 import { MainLayout } from "../components/layout/MainLayout";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { OverviewCards } from "@/components/cards/overview-card";
+import { CampaignEngagementTables } from "@/components/dashboard/CampaignEngagementTables";
+import { RecentSessionsTable } from "@/components/dashboard/RecentSessionsTable";
+import { Button } from "@/components/ui/button";
+import {
+  MapPin,
+  Cpu,
+  Zap,
+  Gift,
+  Store,
+  Megaphone,
+  BarChart3,
+  TrendingUp,
+  RefreshCcw 
+} from "lucide-react";
 
 interface SessionItem {
   id: string;
@@ -389,23 +397,56 @@ export function DashboardPage() {
     void fetchDashboardData();
   }, []);
 
+  if (loading) {
+    return (
+      <MainLayout>
+        <PageHeader
+        title="Overview"
+        breadcrumbs={[
+          { label: "Overview", href: "/" },
+
+        ]}
+      />
+        <div className="flex flex-1 items-center justify-center p-4">
+          <div className="flex items-center gap-2">
+            <RefreshCcw className="h-5 w-5 animate-spin" />
+            <p>Loading overview ...</p>
+          </div>
+        </div>
+      </MainLayout>
+    )
+  }
+
   return (
     <MainLayout>
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h4" gutterBottom>
-          Dashboard
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          High-level overview of Opencharge locations, units, sessions,
-          promotions and campaign engagement.
-        </Typography>
-      </Box>
 
-      {loading && (
-        <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
-          <CircularProgress />
-        </Box>
-      )}
+
+      <PageHeader
+        title="Overview"
+        breadcrumbs={[
+          { label: "Overview", href: "/" },
+
+        ]}
+      />
+       <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+         {/*  HEADER SECTION  */}
+         <div className="flex justify-between items-center">
+          <div>
+            <p className="text-muted-foreground">
+            High-level overview of Opencharge locations, units, sessions,
+            promotions and campaign engagement.
+            </p>
+          </div>
+          {/* Action buttons for refreshing data */}
+          <div className="flex gap-2">
+            <Button variant="outline" size="icon">
+              <RefreshCcw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+        </div>
+
+
+       </div>
 
       {error && (
         <Typography color="error" sx={{ mb: 2 }}>
@@ -416,428 +457,89 @@ export function DashboardPage() {
       {!loading && !error && (
         <>
           {/* Row 1: locations / units / sessions / promotions */}
-          <Grid container spacing={2} sx={{ mb: 3 }}>
-            {/* Locations */}
-            <Grid item xs={12} sm={6} md={3}>
-              <Paper
-                elevation={0}
-                sx={{
-                  p: 2,
-                  borderRadius: 2,
-                  border: "1px solid",
-                  borderColor: "divider",
-                }}
-              >
-                <Typography variant="subtitle2" color="text.secondary">
-                  Locations
-                </Typography>
-                <Typography variant="h4">{locationsCount}</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {locationsWithSessionsLast7} with sessions in last 7 days
-                </Typography>
-              </Paper>
-            </Grid>
+          <OverviewCards
+            columns={4}
+            stats={[
+              {
+                title: "Locations",
+                value: locationsCount.toString(),
+                subtitle: `${locationsWithSessionsLast7} with sessions in last 7 days`,
+                icon: MapPin,
+              },
+              {
+                title: "Units",
+                value: unitsCount.toString(),
+                subtitle: `${activeUnitsCount} online • ${unitsNeedingMaintenanceCount} need maintenance`,
+                icon: Cpu,
+              },
+              {
+                title: "Sessions (last 7 days)",
+                value: sessionsLast7DaysCount.toString(),
+                subtitle: `
+                  ${sessionsTodayCount} today •
+                  Avg: ${
+                    avgSessionDurationLast7 != null
+                      ? `${avgSessionDurationLast7.toFixed(1)} min`
+                      : "-"
+                  } •
+                  Total: ${sessionsCount}
+                `,
+                icon: Zap,
+              },
+              {
+                title: "Active promotions",
+                value: activePromotionsCount.toString(),
+                subtitle: "Currently running offers",
+                icon: Gift,
+              },
+            ]}
+          />
 
-            {/* Units */}
-            <Grid item xs={12} sm={6} md={3}>
-              <Paper
-                elevation={0}
-                sx={{
-                  p: 2,
-                  borderRadius: 2,
-                  border: "1px solid",
-                  borderColor: "divider",
-                }}
-              >
-                <Typography variant="subtitle2" color="text.secondary">
-                  Units
-                </Typography>
-                <Typography variant="h4">{unitsCount}</Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  display="block"
-                >
-                  {activeUnitsCount} online
-                </Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  display="block"
-                >
-                  {unitsNeedingMaintenanceCount} need maintenance
-                </Typography>
-              </Paper>
-            </Grid>
-
-            {/* Sessions */}
-            <Grid item xs={12} sm={6} md={3}>
-              <Paper
-                elevation={0}
-                sx={{
-                  p: 2,
-                  borderRadius: 2,
-                  border: "1px solid",
-                  borderColor: "divider",
-                }}
-              >
-                <Typography variant="subtitle2" color="text.secondary">
-                  Sessions (last 7 days)
-                </Typography>
-                <Typography variant="h4">
-                  {sessionsLast7DaysCount}
-                </Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  display="block"
-                >
-                  {sessionsTodayCount} today
-                </Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  display="block"
-                >
-                  Avg duration:{" "}
-                  {avgSessionDurationLast7 != null
-                    ? `${avgSessionDurationLast7.toFixed(1)} min`
-                    : "-"}
-                </Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  display="block"
-                >
-                  Out of {sessionsCount} total sessions
-                </Typography>
-              </Paper>
-            </Grid>
-
-            {/* Promotions */}
-            <Grid item xs={12} sm={6} md={3}>
-              <Paper
-                elevation={0}
-                sx={{
-                  p: 2,
-                  borderRadius: 2,
-                  border: "1px solid",
-                  borderColor: "divider",
-                }}
-              >
-                <Typography variant="subtitle2" color="text.secondary">
-                  Active promotions
-                </Typography>
-                <Typography variant="h4">
-                  {activePromotionsCount}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Currently running offers
-                </Typography>
-              </Paper>
-            </Grid>
-          </Grid>
+      
 
           {/* Row 2: brands / campaigns / engagement */}
-          <Grid container spacing={2} sx={{ mb: 3 }}>
-            {/* Brands */}
-            <Grid item xs={12} sm={6} md={3}>
-              <Paper
-                elevation={0}
-                sx={{
-                  p: 2,
-                  borderRadius: 2,
-                  border: "1px solid",
-                  borderColor: "divider",
-                }}
-              >
-                <Typography variant="subtitle2" color="text.secondary">
-                  Brands
-                </Typography>
-                <Typography variant="h4">{brandsCount}</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  In the Engage collection
-                </Typography>
-              </Paper>
-            </Grid>
-
-            {/* Campaigns */}
-            <Grid item xs={12} sm={6} md={3}>
-              <Paper
-                elevation={0}
-                sx={{
-                  p: 2,
-                  borderRadius: 2,
-                  border: "1px solid",
-                  borderColor: "divider",
-                }}
-              >
-                <Typography variant="subtitle2" color="text.secondary">
-                  Campaigns
-                </Typography>
-                <Typography variant="h4">{campaignsCount}</Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {activeCampaignsCount} active
-                </Typography>
-              </Paper>
-            </Grid>
-
-            {/* Campaign engagements */}
-            <Grid item xs={12} sm={6} md={3}>
-              <Paper
-                elevation={0}
-                sx={{
-                  p: 2,
-                  borderRadius: 2,
-                  border: "1px solid",
-                  borderColor: "divider",
-                }}
-              >
-                <Typography variant="subtitle2" color="text.secondary">
-                  Campaign engagements
-                </Typography>
-                <Typography variant="h4">
-                  {campaignEngagementTotal}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  Sum of stored <code>engagements</code> across campaigns
-                </Typography>
-              </Paper>
-            </Grid>
-
-            {/* Engagement quality */}
-            <Grid item xs={12} sm={6} md={3}>
-              <Paper
-                elevation={0}
-                sx={{
-                  p: 2,
-                  borderRadius: 2,
-                  border: "1px solid",
-                  borderColor: "divider",
-                }}
-              >
-                <Typography variant="subtitle2" color="text.secondary">
-                  Engagement quality
-                </Typography>
-                <Typography variant="h4">
-                  {avgEngagementPerCampaign != null
+          <OverviewCards
+            columns={4}
+            stats={[
+              {
+                title: "Brands",
+                value: brandsCount.toString(),
+                subtitle: "In the Engage collection",
+                icon: Store,
+              },
+              {
+                title: "Campaigns",
+                value: campaignsCount.toString(),
+                subtitle: `${activeCampaignsCount} active`,
+                icon: Megaphone,
+              },
+              {
+                title: "Campaign engagements",
+                value: campaignEngagementTotal.toString(),
+                subtitle: "Sum of stored engagements",
+                icon: BarChart3,
+              },
+              {
+                title: "Engagement quality",
+                value:
+                  avgEngagementPerCampaign != null
                     ? avgEngagementPerCampaign.toFixed(1)
-                    : "–"}
-                </Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  display="block"
-                >
-                  Avg engagements / campaign
-                </Typography>
-                <Typography
-                  variant="caption"
-                  color="text.secondary"
-                  display="block"
-                >
-                  Top: {topCampaignLabel ?? "–"}
-                </Typography>
-              </Paper>
-            </Grid>
-          </Grid>
+                    : "–",
+                subtitle: `Top: ${topCampaignLabel ?? "–"}`,
+                icon: TrendingUp,
+              },
+            ]}
+          />
+
 
           {/* Row 3: Top campaigns + brand slice */}
-          <Box sx={{ mb: 3 }}>
-            <Grid container spacing={2}>
-              {/* Top 5 campaigns */}
-              <Grid item xs={12} md={6}>
-                <Paper
-                  elevation={0}
-                  sx={{
-                    p: 2,
-                    borderRadius: 2,
-                    border: "1px solid",
-                    borderColor: "divider",
-                  }}
-                >
-                  <Typography variant="subtitle1" gutterBottom>
-                    Top 5 campaigns by engagements
-                  </Typography>
-                  <TableContainer>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>Brand</TableCell>
-                          <TableCell>Campaign</TableCell>
-                          <TableCell align="right">Engagements</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {topCampaigns.map((c, idx) => (
-                          <TableRow key={`${c.brandName}-${c.campaignName}-${idx}`}>
-                            <TableCell>{c.brandName}</TableCell>
-                            <TableCell>{c.campaignName}</TableCell>
-                            <TableCell align="right">{c.engagements}</TableCell>
-                          </TableRow>
-                        ))}
-                        {topCampaigns.length === 0 && (
-                          <TableRow>
-                            <TableCell colSpan={3}>
-                              <Typography
-                                align="center"
-                                variant="body2"
-                                color="text.secondary"
-                                sx={{ py: 1 }}
-                              >
-                                No campaign engagement data yet.
-                              </Typography>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                </Paper>
-              </Grid>
-
-              {/* Engagement by brand */}
-              <Grid item xs={12} md={6}>
-                <Paper
-                  elevation={0}
-                  sx={{
-                    p: 2,
-                    borderRadius: 2,
-                    border: "1px solid",
-                    borderColor: "divider",
-                  }}
-                >
-                  <Typography variant="subtitle1" gutterBottom>
-                    Engagement by brand
-                  </Typography>
-                  <TableContainer>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>Brand</TableCell>
-                          <TableCell align="right">Engagements</TableCell>
-                          <TableCell align="right">Campaigns</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {brandEngagements.map((b) => (
-                          <TableRow key={b.brandId}>
-                            <TableCell>{b.brandName}</TableCell>
-                            <TableCell align="right">
-                              {b.engagements}
-                            </TableCell>
-                            <TableCell align="right">
-                              {b.campaignCount}
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                        {brandEngagements.length === 0 && (
-                          <TableRow>
-                            <TableCell colSpan={3}>
-                              <Typography
-                                align="center"
-                                variant="body2"
-                                color="text.secondary"
-                                sx={{ py: 1 }}
-                              >
-                                No brands or campaigns yet.
-                              </Typography>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-                </Paper>
-              </Grid>
-            </Grid>
-          </Box>
+          <CampaignEngagementTables
+            topCampaigns={topCampaigns}
+            brandEngagements={brandEngagements}
+          />
 
           {/* Recent sessions table */}
-          <Box sx={{ mt: 2 }}>
-            <Typography variant="h6" gutterBottom>
-              Recent sessions
-            </Typography>
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ mb: 1 }}
-            >
-              Last 10 sessions across all locations (from chargesessions).
-            </Typography>
-
-            <TableContainer
-              component={Paper}
-              sx={{
-                borderRadius: 2,
-                border: "1px solid",
-                borderColor: "divider",
-              }}
-            >
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Location</TableCell>
-                    <TableCell>Unit</TableCell>
-                    <TableCell>Status</TableCell>
-                    <TableCell>Started</TableCell>
-                    <TableCell>Ended</TableCell>
-                    <TableCell align="right">Duration (min)</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {recentSessions.map((s) => (
-                    <TableRow key={s.id}>
-                      <TableCell>
-                        <Typography variant="body2">
-                          {s.locationName ?? s.locationId ?? "-"}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body2">
-                          {s.unitName ?? s.unitId ?? "-"}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        {s.status ? (
-                          <Chip
-                            label={
-                              s.status === "completed"
-                                ? "Completed"
-                                : "In progress"
-                            }
-                            size="small"
-                            color={
-                              s.status === "completed" ? "success" : "info"
-                            }
-                          />
-                        ) : (
-                          "-"
-                        )}
-                      </TableCell>
-                      <TableCell>{formatDateTime(s.startedAt)}</TableCell>
-                      <TableCell>{formatDateTime(s.endedAt)}</TableCell>
-                      <TableCell align="right">
-                        {typeof s.durationMinutes === "number"
-                          ? s.durationMinutes.toFixed(0)
-                          : "-"}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-
-                  {recentSessions.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={6}>
-                        <Typography align="center" sx={{ py: 2 }}>
-                          No sessions found yet.
-                        </Typography>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </Box>
+          <RecentSessionsTable sessions={recentSessions} />
         </>
       )}
     </MainLayout>

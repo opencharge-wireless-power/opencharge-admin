@@ -79,7 +79,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   };
 
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh" }}>
+    <div className="flex min-h-screen w-full">
       {/* ---------- Sidebar Drawer ---------- */}
       <Drawer
         variant="permanent"
@@ -187,25 +187,12 @@ export function MainLayout({ children }: MainLayoutProps) {
         color="default"
         elevation={0}
       >
-        <Toolbar>
-          <Typography variant="h6" noWrap component="div">
-            Opencharge Admin
-          </Typography>
-        </Toolbar>
+      
       </AppBar>
 
       {/* ---------- Main Content ---------- */}
-      <Box
-        component="main"
-        sx={{
-          flexGrow: 1,
-          p: 3,
-        }}
-      >
-        {/* Spacer for AppBar */}
-        <Toolbar />
-        {children}
-      </Box>
-    </Box>
+      <main className="flex-1 p-6">{children}</main>
+   
+    </div>
   );
 }

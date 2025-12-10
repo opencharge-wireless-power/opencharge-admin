@@ -2,6 +2,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ProtectedRoute } from "./components/routing/ProtectedRoute";
+import { SidebarProvider } from "@/components/ui/sidebar";
 
 import { DashboardPage } from "./pages/DashboardPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -17,80 +18,82 @@ import { UnitDetailPage } from "./pages/UnitDetailPage";
 export function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          {/* Public */}
-          <Route path="/login" element={<LoginPage />} />
+      <SidebarProvider>
+        <BrowserRouter>
+          <Routes>
+            {/* Public */}
+            <Route path="/login" element={<LoginPage />} />
 
-          {/* Protected */}
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <DashboardPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/locations"
-            element={
-              <ProtectedRoute>
-                <LocationsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/locations/:id"
-            element={
-              <ProtectedRoute>
-                <LocationDetailPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/promotions"
-            element={
-              <ProtectedRoute>
-                <PromotionsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/sessions"
-            element={
+            {/* Protected */}
+            <Route
+              path="/"
+              element={
                 <ProtectedRoute>
-                <AllSessionsPage />
-              </ProtectedRoute>
-            }
-          />
-            <Route path="/campaigns" element={<CampaignListPage />} />
-        <Route
-          path="/campaigns/:brandId/:campaignId"
-          element={<CampaignDetailPage />}
-        />
-          
-          
+                  <DashboardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/locations"
+              element={
+                <ProtectedRoute>
+                  <LocationsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/locations/:id"
+              element={
+                <ProtectedRoute>
+                  <LocationDetailPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/promotions"
+              element={
+                <ProtectedRoute>
+                  <PromotionsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/sessions"
+              element={
+                  <ProtectedRoute>
+                  <AllSessionsPage />
+                </ProtectedRoute>
+              }
+            />
+              <Route path="/campaigns" element={<CampaignListPage />} />
           <Route
-            path="/units"
-            element={
-              <ProtectedRoute>
-                <UnitsListPage />
-              </ProtectedRoute>
-            }
+            path="/campaigns/:brandId/:campaignId"
+            element={<CampaignDetailPage />}
           />
-          <Route
-            path="/units/:id"
-            element={
-              <ProtectedRoute>
-                <UnitDetailPage />
-              </ProtectedRoute>
-            }
-          />
+            
+            
+            <Route
+              path="/units"
+              element={
+                <ProtectedRoute>
+                  <UnitsListPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/units/:id"
+              element={
+                <ProtectedRoute>
+                  <UnitDetailPage />
+                </ProtectedRoute>
+              }
+            />
 
-          {/* Catch-all */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
+            {/* Catch-all */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </BrowserRouter>
+      </SidebarProvider>
     </AuthProvider>
   );
 }
