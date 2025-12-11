@@ -45,7 +45,7 @@ import {
   
   export function RecentSessionsTable({ sessions }: RecentSessionsTableProps) {
     return (
-      <Card>
+      <Card className="shadow-none border-gray-200  text-gray-800">
         <CardHeader>
           <CardTitle>Recent Sessions</CardTitle>
           <CardDescription>
