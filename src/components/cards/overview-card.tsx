@@ -14,7 +14,7 @@ interface OverviewCard {
   badgeVariant?: "default" | "destructive"
 }
 
-interface StatticsCardsProps {
+interface StatisticsCardsProps {
   stats: OverviewCard[]
   /** 
    * Number of cards per row at large screen size 
@@ -23,7 +23,7 @@ interface StatticsCardsProps {
   columns?: number
 }
 
-export function OverviewCards({ stats, columns = 4 }: StatticsCardsProps) {
+export function OverviewCards({ stats, columns = 4 }: StatisticsCardsProps) {
   // Dynamically create grid column classes based on `columns`
   const gridCols = {
     1: "grid-cols-1",
@@ -38,7 +38,7 @@ export function OverviewCards({ stats, columns = 4 }: StatticsCardsProps) {
       {stats.map((stat, index) => (
         <Card
           key={index}
-          className="overflow-hidden shadow-none border bg-neutral-900 text-white  mb-4"
+          className="overflow-hidden shadow-none border bg-gray-950 text-white  mb-4"
         >
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <div className="text-sm font-medium opacity-80">{stat.title}</div>
