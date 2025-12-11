@@ -2,7 +2,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ProtectedRoute } from "./components/routing/ProtectedRoute";
-import { SidebarProvider } from "@/components/ui/sidebar";
+import { SidebarProvider } from "./components/ui/sidebar";
 
 import { DashboardPage } from "./pages/DashboardPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -60,16 +60,27 @@ export function App() {
             <Route
               path="/sessions"
               element={
-                  <ProtectedRoute>
+                <ProtectedRoute>
                   <AllSessionsPage />
                 </ProtectedRoute>
               }
             />
-              <Route path="/campaigns" element={<CampaignListPage />} />
-          <Route
-            path="/campaigns/:brandId/:campaignId"
-            element={<CampaignDetailPage />}
-          />
+            <Route
+              path="/campaigns"
+              element={
+                <ProtectedRoute>
+                  <CampaignListPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/campaigns/:brandId/:campaignId"
+              element={
+                <ProtectedRoute>
+                  <CampaignDetailPage />
+                </ProtectedRoute>
+              }
+            />
             
             
             <Route

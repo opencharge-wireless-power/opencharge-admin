@@ -16,6 +16,7 @@ import {
   limit,
   type DocumentData,
   type Timestamp,
+  collectionGroup,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { MainLayout } from "../components/layout/MainLayout";
@@ -60,6 +61,9 @@ import Grid from "@mui/material/Grid";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import CloseIcon from "@mui/icons-material/Close";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import { QRCodeSVG } from "qrcode.react";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 
 // Shared types & helpers
 import type {
@@ -75,6 +79,8 @@ import type {
   UnitMetrics,
   UnitInteractions,
 } from "../types/Opencharge";
+
+import type { StoreEngageCampaign } from "../types/Opencharge";
 import {
   formatDateTime,
   formatDurationMinutes,
@@ -84,6 +90,37 @@ import {
   ORDERED_DAYS,
 } from "../utils/Format";
 
+interface LocationCampaign {
+  id: string;
+  brandId?: string;
+  name: string;
+  active: boolean;
+  engagements: number;
+  url?: string;
+  targetUrl?: string;
+  createdAt?: Date;
+}
+function deriveQrCodeFromId(
+  locationId: string | undefined,
+  base = "https://opencharge.io/e"
+): string {
+  if (!locationId) return "";
+  const parts = locationId.split("-").filter(Boolean);
+  if (parts.length < 2) return "";
+
+  const [brandPart, ...rest] = parts;
+  const locationPart = rest.join("-");
+
+  return `${base}/${brandPart}/${locationPart}`;
+}
+
+const slugify = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 // ---------- Component ----------
 
 export function LocationDetailPage() {
@@ -134,6 +171,15 @@ export function LocationDetailPage() {
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [promotionsLoading, setPromotionsLoading] = useState(true);
   const [promotionsError, setPromotionsError] = useState<string | null>(null);
+
+  // Campaigns
+  const [campaigns, setCampaigns] = useState<LocationCampaign[]>([]);
+  const [campaignsLoading, setCampaignsLoading] = useState(true);
+  const [campaignsError, setCampaignsError] = useState<string | null>(null);
+
+  const [engageCampaigns, setEngageCampaigns] = useState<StoreEngageCampaign[]>([]);
+const [engageLoading, setEngageLoading] = useState(false);
+const [engageError, setEngageError] = useState<string | null>(null);
 
   // Images dialog
   const [imagesDialogOpen, setImagesDialogOpen] = useState(false);
@@ -186,6 +232,12 @@ export function LocationDetailPage() {
           category: (data.category as string | undefined) ?? "",
           active: (data.active as boolean | undefined) ?? false,
 
+          brand: (data.brand as string | undefined) ?? "",
+          storeLocation: (data.storeLocation as string | undefined) ?? "",
+           qrCode:
+                  (data.qrCode as string | undefined) ??
+                  deriveQrCodeFromId(snapshot.id),
+
           hasActivePromotion:
             (data.hasActivePromotion as boolean | undefined) ?? false,
           hasActivePromotions:
@@ -230,6 +282,60 @@ export function LocationDetailPage() {
 
     void fetchLocation();
   }, [id]);
+
+  //----------- Fetch Egage Campaign ----------
+  useEffect(() => {
+  const fetchEngageCampaigns = async () => {
+    if (!location?.brand || !location?.storeLocation) return;
+
+    setEngageLoading(true);
+    setEngageError(null);
+
+    try {
+      const brandSlug = slugify(location.brand);
+      const storeSlug = slugify(location.storeLocation);
+
+      const campaignsRef = collection(
+        db,
+        "engage",
+        brandSlug,
+        "stores",
+        storeSlug,
+        "campaigns"
+      );
+
+      const snap = await getDocs(campaignsRef);
+
+      const items: StoreEngageCampaign[] = snap.docs.map((docSnap) => {
+        const data = docSnap.data() as DocumentData;
+
+        return {
+          id: docSnap.id,
+          campaignId: (data.campaignId as string) ?? docSnap.id,
+          name: (data.name as string) ?? "Untitled campaign",
+          active: (data.active as boolean | undefined) ?? false,
+          engagements:
+            typeof data.engagements === "number" ? data.engagements : 0,
+          url: data.url as string | undefined,
+          targetUrl: data.targetUrl as string | undefined,
+          brandSlug,
+          storeSlug,
+          locationId: location.id,
+        };
+      });
+
+      setEngageCampaigns(items);
+    } catch (err) {
+      setEngageError(
+        err instanceof Error ? err.message : "Failed to load Engage campaigns"
+      );
+    } finally {
+      setEngageLoading(false);
+    }
+  };
+
+  fetchEngageCampaigns();
+}, [location]);
 
   // ---------- Fetch UNITS ----------
   useEffect(() => {
@@ -570,6 +676,68 @@ useEffect(() => {
     void fetchPromotions();
   }, [id]);
 
+  // ---------- Fetch CAMPAIGNS ----------
+useEffect(() => {
+  const fetchCampaigns = async () => {
+    if (!id) {
+      setCampaignsLoading(false);
+      return;
+    }
+
+    try {
+      setCampaignsLoading(true);
+      setCampaignsError(null);
+
+      // campaigns are stored under engage/{brandId}/campaigns
+      // but we use a collectionGroup query so we don't care which brand
+      const cgRef = collectionGroup(db, "campaigns");
+      const qCampaigns = query(
+        cgRef,
+        where("locationIds", "array-contains", id)
+      );
+
+      const snapshot = await getDocs(qCampaigns);
+
+      const items: LocationCampaign[] = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data() as DocumentData;
+        const createdTs = data.createdAt as Timestamp | undefined;
+
+        // parent of campaigns collection is the brand document
+        const brandRef = docSnap.ref.parent.parent;
+        const brandId = brandRef?.id;
+
+        return {
+          id: docSnap.id,
+          brandId,
+          name: (data.name as string | undefined) ?? "Untitled campaign",
+          active: (data.active as boolean | undefined) ?? false,
+          engagements: (data.engagements as number | undefined) ?? 0,
+          url: data.url as string | undefined,
+          targetUrl: data.targetUrl as string | undefined,
+          createdAt: createdTs ? createdTs.toDate() : undefined,
+        };
+      });
+
+      // newest first
+      items.sort((a, b) => {
+        const ta = a.createdAt?.getTime() ?? 0;
+        const tb = b.createdAt?.getTime() ?? 0;
+        return tb - ta;
+      });
+
+      setCampaigns(items);
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Failed to load campaigns";
+      setCampaignsError(msg);
+    } finally {
+      setCampaignsLoading(false);
+    }
+  };
+
+  void fetchCampaigns();
+}, [id]);
+
   // ---------- LOCATION EDIT ----------
   const openEditDialog = () => {
     if (!location) return;
@@ -582,6 +750,11 @@ useEffect(() => {
       city: location.city ?? "",
       country: location.country ?? "",
       category: location.category ?? "",
+
+      brand: location.brand ?? "",
+      storeLocation: location.storeLocation ?? "",
+     qrCode: location.qrCode || deriveQrCodeFromId(location.id),
+
       priority: location.priority != null ? String(location.priority) : "",
       lat: location.lat != null ? String(location.lat) : "",
       lng: location.lng != null ? String(location.lng) : "",
@@ -652,12 +825,20 @@ useEffect(() => {
       const lngNumber =
         editForm.lng.trim().length > 0 ? Number(editForm.lng.trim()) : null;
 
+        let qrCode = editForm.qrCode.trim();
+    if (!qrCode) {
+      qrCode = deriveQrCodeFromId(location.id);
+    }
+
       const updates: Record<string, unknown> = {
         name: editForm.name.trim(),
         address: editForm.address.trim(),
         city: editForm.city.trim(),
         country: editForm.country.trim(),
         category: editForm.category.trim(),
+        brand: editForm.brand.trim(),
+        storeLocation: editForm.storeLocation.trim(),
+        qrCode,
         active: editForm.active,
         supportsOrdering: editForm.supportsOrdering,
         supportsPayments: editForm.supportsPayments,
@@ -696,6 +877,9 @@ useEffect(() => {
         city: updates.city as string,
         country: updates.country as string,
         category: updates.category as string,
+        brand: updates.brand as string,
+        storeLocation: updates.storeLocation as string,
+        qrCode: updates.qrCode as string,
         active: updates.active as boolean,
         supportsOrdering: updates.supportsOrdering as boolean,
         supportsPayments: updates.supportsPayments as boolean,
@@ -1027,10 +1211,36 @@ useEffect(() => {
     location.hasActivePromotion || location.hasActivePromotions;
   const unitsHeaderColSpan = canEdit ? 8 : 7;
 
+  const brandSlug = location.brand ? slugify(location.brand) : "";
+const storeSlug = location.storeLocation
+  ? slugify(location.storeLocation)
+  : "";
+
+  const qrImageUrl = location.qrCode
+  ? `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(
+      location.qrCode
+    )}`
+  : undefined;
+
+  const qrUrl =
+  location.qrCode && location.qrCode.length > 0
+    ? location.qrCode
+    : `https://opencharge.io/e/${brandSlug}/${storeSlug}`;
+
   return (
     <MainLayout>
+      <Button
+      startIcon={<ArrowBackIcon />}
+      size="small"
+      sx={{ mb: 2 }}
+      onClick={() => navigate("/locations")}
+    >
+      Back to locations
+    </Button>
       {/* Header */}
       <Box sx={{ mb: 3, display: "flex", gap: 2, alignItems: "center" }}>
+       
+        {/* Title + address */}
         <Box sx={{ flexGrow: 1 }}>
           <Typography variant="h4" gutterBottom>
             {location.name}
@@ -1043,6 +1253,7 @@ useEffect(() => {
           </Typography>
         </Box>
 
+        {/* Status + actions */}
         <Stack direction="column" spacing={1} alignItems="flex-end">
           <Chip
             label={location.active ? "Active" : "Inactive"}
@@ -1052,7 +1263,13 @@ useEffect(() => {
           {hasPromo && (
             <Chip label="Promotion active" color="primary" size="small" />
           )}
-
+          {campaigns.length > 0 && (
+              <Chip
+                label={`${campaigns.length} campaign${campaigns.length > 1 ? "s" : ""}`}
+                color="secondary"
+                size="small"
+              />
+            )}
           {canEdit && (
             <Button variant="outlined" size="small" onClick={openEditDialog}>
               Edit location
@@ -1142,6 +1359,8 @@ useEffect(() => {
         </CardContent>
       </Card>
 
+
+
       {/* GRID LAYOUT */}
       <Grid container spacing={2} sx={{ mt: 2 }}>
         {/* Left column */}
@@ -1153,6 +1372,21 @@ useEffect(() => {
               </Typography>
 
               <List dense>
+                  <ListItem>
+                    <ListItemText
+                      primary="Brand"
+                      secondary={location.brand || "-"}
+                    />
+                  </ListItem>
+                  <Divider component="li" />
+
+                  <ListItem>
+                    <ListItemText
+                      primary="Store location"
+                      secondary={location.storeLocation || "-"}
+                    />
+                  </ListItem>
+                  <Divider component="li" />
                 <ListItem>
                   <ListItemText
                     primary="Category"
@@ -1183,6 +1417,14 @@ useEffect(() => {
                     secondary={location.country ?? "-"}
                   />
                 </ListItem>
+
+                <Divider component="li" />
+                  <ListItem>
+                    <ListItemText
+                      primary="QR code link"
+                      secondary={location.qrCode || "-"}
+                    />
+                  </ListItem>
                 <Divider component="li" />
 
                 <ListItem>
@@ -1240,6 +1482,49 @@ useEffect(() => {
 
         {/* Right column */}
         <Grid item xs={12} md={6}>
+           {/* QR code */}
+  <Card sx={{ mb: 2 }}>
+    <CardContent>
+      <Typography variant="h6" gutterBottom>
+        Engagement QR code
+      </Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+        This is the link encoded on the printed QR for this store. It routes to
+        the active Engage campaign for this location.
+      </Typography>
+
+      <Stack direction="row" spacing={3} alignItems="center">
+        <Box
+          sx={{
+            p: 1.5,
+            borderRadius: 2,
+            border: "1px solid",
+            borderColor: "divider",
+            bgcolor: "background.paper",
+          }}
+        >
+          <QRCodeSVG value={qrUrl} size={132} />
+        </Box>
+
+        <Box sx={{ flexGrow: 1 }}>
+          <Typography
+            variant="body2"
+            sx={{ wordBreak: "break-all" }}
+          >
+            {qrUrl}
+          </Typography>
+          <Button
+            startIcon={<ContentCopyIcon />}
+            size="small"
+            sx={{ mt: 1 }}
+            onClick={() => navigator.clipboard.writeText(qrUrl)}
+          >
+            Copy URL
+          </Button>
+        </Box>
+      </Stack>
+    </CardContent>
+  </Card>
           {/* Usage */}
           <Card sx={{ mb: 2 }}>
             <CardContent>
@@ -1418,6 +1703,207 @@ useEffect(() => {
           </CardContent>
         </Card>
       </Box>
+
+      {/* Engage campaigns */}
+<Box sx={{ mt: 4 }}>
+  <Card>
+    <CardContent>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          mb: 1,
+        }}
+      >
+        <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>
+          Engage campaigns at this store
+        </Typography>
+
+        {/* Placeholder – later this can go to a global campaign analytics page */}
+        <Button
+          size="small"
+          variant="text"
+          onClick={() =>
+            navigate(
+              `/engage/campaigns?brand=${encodeURIComponent(
+                brandSlug
+              )}&store=${encodeURIComponent(storeSlug)}`
+            )
+          }
+        >
+          View in Engage
+        </Button>
+      </Box>
+
+      {engageLoading && (
+        <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
+          <CircularProgress size={24} />
+        </Box>
+      )}
+
+      {engageError && (
+        <Typography color="error" variant="body2" sx={{ mt: 1 }}>
+          {engageError}
+        </Typography>
+      )}
+
+      {!engageLoading &&
+        !engageError &&
+        engageCampaigns.length === 0 && (
+          <Typography variant="body2" color="text.secondary">
+            No Engage campaigns configured for this store yet.
+          </Typography>
+        )}
+
+      {!engageLoading &&
+        !engageError &&
+        engageCampaigns.length > 0 && (
+          <Table size="small" sx={{ mt: 1 }}>
+            <TableHead>
+              <TableRow>
+                <TableCell>Campaign</TableCell>
+                <TableCell>Status</TableCell>
+                <TableCell align="right">Engagements</TableCell>
+                <TableCell>Target</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {engageCampaigns.map((c) => (
+                <TableRow key={c.id} hover>
+                  <TableCell>{c.name}</TableCell>
+                  <TableCell>
+                    <Chip
+                      label={c.active ? "Active" : "Inactive"}
+                      size="small"
+                      color={c.active ? "success" : "default"}
+                    />
+                  </TableCell>
+                  <TableCell align="right">{c.engagements}</TableCell>
+                  <TableCell>
+                    {c.targetUrl ? (
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{ wordBreak: "break-all" }}
+                      >
+                        {c.targetUrl}
+                      </Typography>
+                    ) : (
+                      "—"
+                    )}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+    </CardContent>
+  </Card>
+</Box>
+
+      {/* Campaigns at this location */}
+      <Box sx={{ mt: 4 }}>
+        <Card>
+          <CardContent>
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                mb: 1,
+              }}
+            >
+              <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>
+                Campaigns at this location
+              </Typography>
+              <Button
+                size="small"
+                variant="text"
+                onClick={() => navigate("/campaigns")}
+              >
+                Manage in Campaigns
+              </Button>
+            </Box>
+
+            {campaignsLoading && (
+              <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
+                <CircularProgress size={24} />
+              </Box>
+            )}
+
+            {campaignsError && (
+              <Typography color="error" variant="body2" sx={{ mt: 1 }}>
+                {campaignsError}
+              </Typography>
+            )}
+
+            {!campaignsLoading && !campaignsError && campaigns.length === 0 && (
+              <Typography variant="body2" color="text.secondary">
+                No campaigns currently targeting this location.
+              </Typography>
+            )}
+
+            {!campaignsLoading && !campaignsError && campaigns.length > 0 && (
+              <Stack spacing={2} sx={{ mt: 1 }}>
+                {campaigns.map((c) => (
+                  <Box
+                    key={c.id}
+                    sx={{
+                      borderRadius: 1,
+                      border: "1px solid",
+                      borderColor: "divider",
+                      p: 1.5,
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 0.5,
+                    }}
+                  >
+                    <Stack
+                      direction="row"
+                      alignItems="center"
+                      justifyContent="space-between"
+                      spacing={1}
+                    >
+                      <Typography variant="subtitle1">{c.name}</Typography>
+                      <Chip
+                        label={c.active ? "Active" : "Inactive"}
+                        color={c.active ? "success" : "default"}
+                        size="small"
+                      />
+                    </Stack>
+
+                    <Typography variant="body2" color="text.secondary">
+                      {c.targetUrl ?? c.url ?? "No URL configured"}
+                    </Typography>
+
+                    <Typography variant="caption" color="text.secondary">
+                      Engagements: {c.engagements}
+                      {c.createdAt &&
+                        ` • Created ${formatShortDateTime(c.createdAt)}`}
+                    </Typography>
+
+                    {c.brandId && (
+                      <Box sx={{ mt: 0.5 }}>
+                        <Button
+                          size="small"
+                          variant="text"
+                          onClick={() =>
+                            navigate(`/campaigns/${c.brandId}/${c.id}`)
+                          }
+                        >
+                          View campaign detail
+                        </Button>
+                      </Box>
+                    )}
+                  </Box>
+                ))}
+              </Stack>
+            )}
+          </CardContent>
+        </Card>
+      </Box>
+
 
       {/* Units list */}
       <Box sx={{ mt: 4 }}>
@@ -1872,6 +2358,29 @@ useEffect(() => {
                   margin="normal"
                   value={editForm.category}
                   onChange={handleEditChange("category")}
+                />
+                <TextField
+                  label="Brand"
+                  fullWidth
+                  margin="normal"
+                  value={editForm.brand}
+                  onChange={handleEditChange("brand")}
+                />
+                <TextField
+                  label="Store location"
+                  helperText='e.g. "Sea Point"'
+                  fullWidth
+                  margin="normal"
+                  value={editForm.storeLocation}
+                  onChange={handleEditChange("storeLocation")}
+                />
+                <TextField
+                  label="QR code link"
+                  helperText='e.g. "https://opencharge.io/e/sb/sp"'
+                  fullWidth
+                  margin="normal"
+                  value={editForm.qrCode}
+                  onChange={handleEditChange("qrCode")}
                 />
                 <TextField
                   label="Latitude"

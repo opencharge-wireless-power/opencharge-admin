@@ -3,22 +3,21 @@ import { useEffect, useState } from "react";
 import {
   collection,
   getDocs,
+  query,
+  where,
+  limit,
   type DocumentData,
-  type Timestamp,
+  Timestamp,
 } from "firebase/firestore";
-import {
-  Box,
-  Typography,
-  CircularProgress,
-
-} from "@mui/material";
 import { db } from "../firebase";
 import { MainLayout } from "../components/layout/MainLayout";
-import { PageHeader } from "@/components/layout/PageHeader";
+import { PageHeader } from "../components/layout/PageHeader";
 import { OverviewCards } from "@/components/cards/overview-card";
 import { CampaignEngagementTables } from "@/components/dashboard/CampaignEngagementTables";
 import { RecentSessionsTable } from "@/components/dashboard/RecentSessionsTable";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   MapPin,
   Cpu,
@@ -56,18 +55,29 @@ interface BrandEngagement {
   campaignCount: number;
 }
 
-function formatDateTime(date?: Date): string {
-  if (!date) return "-";
-  return date.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+interface AppAdoptionMetrics {
+  total: number;
+  withApp: number;
+  uniqueUnitsWithApp: number;
+}
+
+interface AppLocationRow {
+  locationLabel: string;
+  sessions: number;
 }
 
 export function DashboardPage() {
+  // App adoption / app insights
+  const [appAdoption, setAppAdoption] =
+    useState<AppAdoptionMetrics | null>(null);
+  const [appAdoptionLoading, setAppAdoptionLoading] =
+    useState<boolean>(true);
+  const [appAvgBatteryDelta30, setAppAvgBatteryDelta30] =
+    useState<number | null>(null);
+  const [appTopLocations30, setAppTopLocations30] = useState<
+    AppLocationRow[]
+  >([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -97,20 +107,23 @@ export function DashboardPage() {
   const [brandsCount, setBrandsCount] = useState(0);
   const [campaignsCount, setCampaignsCount] = useState(0);
   const [activeCampaignsCount, setActiveCampaignsCount] = useState(0);
-  const [campaignEngagementTotal, setCampaignEngagementTotal] = useState(0);
-  const [avgEngagementPerCampaign, setAvgEngagementPerCampaign] = useState<
-    number | null
-  >(null);
-  const [topCampaignLabel, setTopCampaignLabel] = useState<string | null>(null);
+  const [campaignEngagementTotal, setCampaignEngagementTotal] =
+    useState(0);
+  const [avgEngagementPerCampaign, setAvgEngagementPerCampaign] =
+    useState<number | null>(null);
+  const [topCampaignLabel, setTopCampaignLabel] = useState<string | null>(
+    null
+  );
 
   const [topCampaigns, setTopCampaigns] = useState<TopCampaign[]>([]);
-  const [brandEngagements, setBrandEngagements] = useState<BrandEngagement[]>(
-    []
-  );
+  const [brandEngagements, setBrandEngagements] = useState<
+    BrandEngagement[]
+  >([]);
 
   // Recent sessions
   const [recentSessions, setRecentSessions] = useState<SessionItem[]>([]);
 
+  // ---------- Main dashboard data ----------
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
@@ -205,7 +218,9 @@ export function DashboardPage() {
           const unitId = data.unitId as string | undefined;
           const unit = unitId ? unitsById.get(unitId) : undefined;
           const locationId = unit?.locationId;
-          const location = locationId ? locationsById.get(locationId) : undefined;
+          const location = locationId
+            ? locationsById.get(locationId)
+            : undefined;
 
           const status: "completed" | "in_progress" | undefined = endedAt
             ? "completed"
@@ -277,9 +292,7 @@ export function DashboardPage() {
         let totalCampaigns = 0;
         let totalActiveCampaigns = 0;
         let totalEngagements = 0;
-        let topCampaignOverall:
-          | { label: string; engagements: number }
-          | null = null;
+        let topCampaignOverall: { label: string; engagements: number } | null = null as { label: string; engagements: number } | null;
 
         const brandNameById = new Map<string, string>();
         brandsSnap.forEach((docSnap) => {
@@ -363,11 +376,11 @@ export function DashboardPage() {
           totalCampaigns > 0 ? totalEngagements / totalCampaigns : null
         );
 
-        setTopCampaignLabel(
-          topCampaignOverall && topCampaignOverall.engagements > 0
-            ? topCampaignOverall.label
-            : null
-        );
+        if (topCampaignOverall !== null && topCampaignOverall.engagements > 0) {
+          setTopCampaignLabel(topCampaignOverall.label);
+        } else {
+          setTopCampaignLabel(null);
+        }
 
         // Top 5 campaigns
         allCampaigns.sort((a, b) => b.engagements - a.engagements);
@@ -387,7 +400,9 @@ export function DashboardPage() {
         setBrandEngagements(brandStats);
       } catch (err) {
         const msg =
-          err instanceof Error ? err.message : "Failed to load dashboard data";
+          err instanceof Error
+            ? err.message
+            : "Failed to load dashboard data";
         setError(msg);
       } finally {
         setLoading(false);
@@ -395,6 +410,108 @@ export function DashboardPage() {
     };
 
     void fetchDashboardData();
+  }, []);
+
+  // ---------- App adoption / app insights (last 30 days) ----------
+  useEffect(() => {
+    const fetchAppAdoption = async () => {
+      try {
+        setAppAdoptionLoading(true);
+
+        const now = new Date();
+        const thirtyDaysAgo = new Date(
+          now.getTime() - 30 * 24 * 60 * 60 * 1000
+        );
+
+        const ref = collection(db, "chargesessions");
+
+        const q = query(
+          ref,
+          where("start", ">=", Timestamp.fromDate(thirtyDaysAgo)),
+          limit(2000) // adjust if you expect very high volume
+        );
+
+        const snap = await getDocs(q);
+
+        let total = 0;
+        let withApp = 0;
+        const unitsWithApp = new Set<string>();
+
+        let batteryDeltaSum = 0;
+        let batteryDeltaCount = 0;
+
+        const locationMap = new Map<string, number>();
+
+        snap.docs.forEach((docSnap) => {
+          const data = docSnap.data() as DocumentData;
+          total++;
+
+          const hasAppInfo =
+            !!data.appLinked ||
+            !!data.appDeviceMake ||
+            !!data.appDeviceModel ||
+            data.appBatteryDelta != null;
+
+          if (!hasAppInfo) return;
+
+          withApp++;
+
+          const unitId =
+            (data.unitId as string | undefined) ??
+            (data.id as string | undefined);
+          if (unitId) unitsWithApp.add(unitId);
+
+          const delta =
+            typeof data.appBatteryDelta === "number" &&
+            !Number.isNaN(data.appBatteryDelta)
+              ? (data.appBatteryDelta as number)
+              : null;
+          if (delta != null) {
+            batteryDeltaSum += delta;
+            batteryDeltaCount++;
+          }
+
+          const locLabel =
+            (data.appLocationId as string | undefined) ??
+            (data.locationId as string | undefined) ??
+            "Unknown location";
+          locationMap.set(locLabel, (locationMap.get(locLabel) ?? 0) + 1);
+        });
+
+        setAppAdoption({
+          total,
+          withApp,
+          uniqueUnitsWithApp: unitsWithApp.size,
+        });
+
+        setAppAvgBatteryDelta30(
+          batteryDeltaCount > 0
+            ? batteryDeltaSum / batteryDeltaCount
+            : null
+        );
+
+        const topLocs: AppLocationRow[] = Array.from(
+          locationMap.entries()
+        )
+          .map(([locationLabel, sessions]) => ({
+            locationLabel,
+            sessions,
+          }))
+          .sort((a, b) => b.sessions - a.sessions)
+          .slice(0, 5);
+
+        setAppTopLocations30(topLocs);
+      } catch (err) {
+        console.error("Failed to load app adoption metrics", err);
+        setAppAdoption(null);
+        setAppAvgBatteryDelta30(null);
+        setAppTopLocations30([]);
+      } finally {
+        setAppAdoptionLoading(false);
+      }
+    };
+
+    void fetchAppAdoption();
   }, []);
 
   if (loading) {
@@ -449,9 +566,9 @@ export function DashboardPage() {
        </div>
 
       {error && (
-        <Typography color="error" sx={{ mb: 2 }}>
+        <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-md text-red-800">
           {error}
-        </Typography>
+        </div>
       )}
 
       {!loading && !error && (
@@ -495,8 +612,6 @@ export function DashboardPage() {
             ]}
           />
 
-      
-
           {/* Row 2: brands / campaigns / engagement */}
           <OverviewCards
             columns={4}
@@ -531,6 +646,109 @@ export function DashboardPage() {
             ]}
           />
 
+
+          {/* Row 2.5: App insights */}
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>App insights (last 30 days)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {appAdoptionLoading || !appAdoption ? (
+                <p className="text-sm text-muted-foreground">
+                  Loading app usage insights…
+                </p>
+              ) : appAdoption.total === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No sessions recorded in the last 30 days.
+                </p>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-1">
+                        App adoption
+                      </p>
+                      <p className="text-2xl font-bold">
+                        {Math.round(
+                          (appAdoption.withApp / appAdoption.total) *
+                            100
+                        )}
+                        %
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {appAdoption.withApp} of {appAdoption.total}{" "}
+                        sessions
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-1">
+                        Units with app sessions
+                      </p>
+                      <p className="text-2xl font-bold">
+                        {appAdoption.uniqueUnitsWithApp}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Devices that saw at least one app-linked
+                        session
+                      </p>
+                    </div>
+
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-1">
+                        Avg battery delta (app)
+                      </p>
+                      <p className="text-2xl font-bold">
+                        {appAvgBatteryDelta30 != null
+                          ? `${appAvgBatteryDelta30.toFixed(0)}%`
+                          : "–"}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Where <code className="text-xs">appBatteryDelta</code> was
+                        reported
+                      </p>
+                    </div>
+                  </div>
+
+                  <div>
+                    <h3 className="text-sm font-semibold mb-3">
+                      Top locations by app-linked sessions
+                    </h3>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Location (from app)</TableHead>
+                          <TableHead className="text-right">
+                            App sessions
+                          </TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {appTopLocations30.length > 0 ? (
+                          appTopLocations30.map((row) => (
+                            <TableRow key={row.locationLabel}>
+                              <TableCell>{row.locationLabel}</TableCell>
+                              <TableCell className="text-right">
+                                {row.sessions}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={2} className="text-center py-8">
+                              <p className="text-sm text-muted-foreground">
+                                No app location data yet.
+                              </p>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Row 3: Top campaigns + brand slice */}
           <CampaignEngagementTables
