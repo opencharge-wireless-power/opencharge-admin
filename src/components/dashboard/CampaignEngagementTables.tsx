@@ -40,7 +40,7 @@ import {
     return (
       <div className="grid gap-4 md:grid-cols-2 mb-6">
         {/* Top 5 campaigns */}
-        <Card>
+        <Card className="shadow-none border-0 bg-gray-50 text-gray-800">
           <CardHeader>
             <CardTitle>Top 5 Campaigns</CardTitle>
             <CardDescription>Ranked by engagement count</CardDescription>
@@ -82,7 +82,7 @@ import {
         </Card>
   
         {/* Engagement by brand */}
-        <Card>
+        <Card className="shadow-none border-0 bg-gray-50 text-gray-800">
           <CardHeader>
             <CardTitle>Engagement by Brand</CardTitle>
             <CardDescription>Total engagements and campaign count</CardDescription>
