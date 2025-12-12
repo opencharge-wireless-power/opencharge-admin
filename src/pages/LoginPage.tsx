@@ -2,81 +2,105 @@
 import { useState } from "react";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "../firebase";
-import { Box, Button, TextField, Typography, Paper } from "@mui/material";
 import { useNavigate } from "react-router-dom";
-import { useAuth } from "../hooks/useAuth";
 import type { FirebaseError } from "firebase/app";
 
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import {
+  Field,
+  FieldLabel,
+  FieldGroup,
+  FieldDescription,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+
 export function LoginPage() {
-  const { signIn } = useAuth();
+
   const navigate = useNavigate();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
-
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     setError(null);
+
     try {
-      await signIn(email, password);
-      navigate("/", { replace: true });
+      await signInWithEmailAndPassword(auth, email, password);
+      navigate("/locations");
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to sign in";
-      setError(message);
+      const firebaseError = err as FirebaseError;
+      setError(firebaseError.message || "Failed to sign in");
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-      navigate("/locations");
-    } catch (err) {
-        const error = err as FirebaseError;
-        setError(error.message || "Failed to sign in");
-    }
-  };
-
   return (
-    <Box sx={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <Paper sx={{ p: 4, width: 360 }}>
-        <Typography variant="h5" mb={2}>
-          Opencharge Admin Login
-        </Typography>
-        <form onSubmit={handleLogin}>
-          <TextField
-            label="Email"
-            type="email"
-            fullWidth
-            margin="normal"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-          />
-          <TextField
-            label="Password"
-            type="password"
-            fullWidth
-            margin="normal"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          {error && (
-            <Typography color="error" variant="body2" mt={1}>
-              {error}
-            </Typography>
-          )}
-          <Button fullWidth type="submit" variant="contained" sx={{ mt: 2 }}>
-            Login
-          </Button>
-        </form>
-      </Paper>
-    </Box>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+      <Card className="w-full max-w-sm shadow-md">
+        <CardHeader>
+          <CardTitle>Opencharge Admin Login</CardTitle>
+          <CardDescription>Access the admin dashboard</CardDescription>
+        </CardHeader>
+
+        <CardContent>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <FieldGroup>
+
+              <Field>
+                <FieldLabel htmlFor="email">Email</FieldLabel>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder=""
+                  value={email}
+                  required
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </Field>
+
+              <Field>
+                <FieldLabel htmlFor="password">Password</FieldLabel>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  required
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </Field>
+
+              {error && (
+                <FieldDescription className="text-red-500">
+                  {error}
+                </FieldDescription>
+              )}
+
+              <Field>
+                <Button 
+                  type="submit" 
+                  className="w-full" 
+                  disabled={submitting}
+                >
+                  {submitting ? "Logging in..." : "Login"}
+                </Button>
+              </Field>
+
+            </FieldGroup>
+          </form>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
