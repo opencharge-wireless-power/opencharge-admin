@@ -1,4 +1,4 @@
-"use client";
+
 
 type PulseLoaderProps = {
   size?: number; // size in Tailwind units (1 unit = 0.25rem)
