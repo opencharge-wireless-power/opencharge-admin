@@ -1,4 +1,4 @@
-// components/navigation/page-header.tsx
+// components/layout/PageHeader.tsx
 
 import {
     Breadcrumb,
