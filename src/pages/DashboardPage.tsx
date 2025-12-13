@@ -10,24 +10,17 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { db } from "../firebase";
-import { MainLayout } from "../components/layout/MainLayout";
+
 import { PageHeader } from "../components/layout/PageHeader";
-import { OverviewCards } from "@/components/cards/overview-card";
+import { OverviewCards } from "@/components/common/cards/overview-card";
 import { AppInsightsCard } from "@/components/dashboard/AppInsightsCard"
 import { CampaignEngagementTables } from "@/components/dashboard/CampaignEngagementTables";
 import { RecentSessionsTable } from "@/components/dashboard/RecentSessionsTable";
 import { Button } from "@/components/ui/button";
-import {
-  MapPin,
-  Cpu,
-  Zap,
-  Gift,
-  Store,
-  Megaphone,
-  BarChart3,
-  TrendingUp,
-  RefreshCcw 
+import {  RefreshCcw 
 } from "lucide-react";
+import { Campaigns, Promotions, Sessions, Units, LocationsDot, CampaignsQ } from "@/components/icons/Icons";
+import { PulseLoader } from "@/components/common/loading/pulse-loader";
 
 interface SessionItem {
   id: string;
@@ -515,7 +508,7 @@ export function DashboardPage() {
 
   if (loading) {
     return (
-      <MainLayout>
+      <>
         <PageHeader
         title="Overview"
         breadcrumbs={[
@@ -523,18 +516,19 @@ export function DashboardPage() {
 
         ]}
       />
+
         <div className="flex flex-1 items-center justify-center p-4">
-          <div className="flex items-center gap-2">
-            <RefreshCcw className="h-5 w-5 animate-spin" />
-            <p>Loading overview ...</p>
-          </div>
+        <div className="flex items-center gap-2">
+          {/* Pulsing circle */}
+          <PulseLoader size={8} pulseCount={4} speed={1.5} />
         </div>
-      </MainLayout>
+      </div>
+      </>
     )
   }
 
   return (
-    <MainLayout>
+    <>
 
 
       <PageHeader
@@ -580,15 +574,15 @@ export function DashboardPage() {
                 title: "Locations",
                 value: locationsCount.toString(),
                 subtitle: `${locationsWithSessionsLast7} with sessions in last 7 days`,
-                desription: "Locations are the physical places where Power Surface devices are deployed.",
-                icon: MapPin,
+
+                icon: LocationsDot,
               },
               {
                 title: "Units",
                 value: unitsCount.toString(),
                 subtitle: `${activeUnitsCount} online • ${unitsNeedingMaintenanceCount} need maintenance`,
-                desription: "Units are the physical Power Surface devices that are deployed in locations.",
-                icon: Cpu,
+
+                icon: Units,
               },
               {
                 title: "Sessions (last 7 days)",
@@ -602,15 +596,15 @@ export function DashboardPage() {
                   } •
                   Total: ${sessionsCount}
                 `,
-                desription: "Sessions are the time spent in a location by a unit.",
-                icon: Zap,
+        
+                icon: Sessions,
               },
               {
                 title: "Active promotions",
                 value: activePromotionsCount.toString(),
                 subtitle: "Currently running offers",
-                icon: Gift,
-                desription: "Promotions are offers that are currently running across all site-partner locations.",
+                icon: Promotions,
+
               },
             ]}
           />
@@ -623,19 +617,19 @@ export function DashboardPage() {
                 title: "Brands",
                 value: brandsCount.toString(),
                 subtitle: "In the Engage collection",
-                icon: Store,
+                icon: LocationsDot,
               },
               {
                 title: "Campaigns",
                 value: campaignsCount.toString(),
                 subtitle: `${activeCampaignsCount} active`,
-                icon: Megaphone,
+                icon: CampaignsQ,
               },
               {
                 title: "Campaign engagements",
                 value: campaignEngagementTotal.toString(),
                 subtitle: "Sum of stored engagements",
-                icon: BarChart3,
+                icon: Campaigns,
               },
               {
                 title: "Engagement quality",
@@ -644,7 +638,7 @@ export function DashboardPage() {
                     ? avgEngagementPerCampaign.toFixed(1)
                     : "–",
                 subtitle: `Top: ${topCampaignLabel ?? "–"}`,
-                icon: TrendingUp,
+                icon: Sessions,
               },
             ]}
           />
@@ -670,6 +664,6 @@ export function DashboardPage() {
           <RecentSessionsTable sessions={recentSessions} />
         </>
       )}
-    </MainLayout>
+    </>
   );
 }
