@@ -14,14 +14,7 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 
-import {
-  LayoutDashboard,
-  MapPin,
-  Tag,
-  Megaphone,
-  Zap,
-  Activity,
-} from "lucide-react";
+import { CampaignsQ, Units, Promotions, Sessions, Dashboard, LocationsDot } from "@/components/icons/Icons";
 
 import { useAuth } from "@/hooks/useAuth";
 import { NavUser } from "./NavUser";
@@ -38,38 +31,38 @@ const navItems: NavItem[] = [
   {
     label: "Dashboard",
     to: "/",
-    icon: LayoutDashboard,
+    icon: Dashboard,
     match: (path) => path === "/",
   },
   {
     label: "Locations",
     to: "/locations",
-    icon: MapPin,
+    icon: LocationsDot,
     match: (path) =>
       path === "/locations" || path.startsWith("/locations/"),
   },
   {
     label: "Promotions",
     to: "/promotions",
-    icon: Tag,
+    icon: Promotions,
     match: (path) => path.startsWith("/promotions"),
   },
   {
     label: "Campaigns",
     to: "/campaigns",
-    icon: Megaphone,
+    icon: CampaignsQ,
     match: (path) => path.startsWith("/campaigns"),
   },
   {
     label: "Units",
     to: "/units",
-    icon: Zap,
+    icon: Units,
     match: (path) => path === "/units" || path.startsWith("/units/"),
   },
   {
     label: "Sessions",
     to: "/sessions",
-    icon: Activity,
+    icon: Sessions,
     match: (path) => path.startsWith("/sessions"),
   },
 ];
