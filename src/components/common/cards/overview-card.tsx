@@ -1,26 +1,25 @@
 // src/components/cards/overview-card.tsx
-import { Card, CardContent, CardHeader } from "@/components/ui/card"
-import { type LucideIcon } from "lucide-react"
-
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import React from "react";
 
 interface OverviewCard {
-  title: string
-  value: string
-  subtitle: string
-  icon: LucideIcon
-  trend?: string
-  trendUp?: boolean
-  valueClass?: string
-  badgeVariant?: "default" | "destructive"
+  title: string;
+  value: string;
+  subtitle: string;
+  icon: React.ComponentType<{ className?: string }>; // <-- updated
+  trend?: string;
+  trendUp?: boolean;
+  valueClass?: string;
+  badgeVariant?: "default" | "destructive";
 }
 
 interface StatisticsCardsProps {
-  stats: OverviewCard[]
+  stats: OverviewCard[];
   /** 
    * Number of cards per row at large screen size 
    * (default = 4; auto adjusts on smaller screens)
    */
-  columns?: number
+  columns?: number;
 }
 
 export function OverviewCards({ stats, columns = 4 }: StatisticsCardsProps) {
@@ -31,37 +30,42 @@ export function OverviewCards({ stats, columns = 4 }: StatisticsCardsProps) {
     3: "md:grid-cols-2 lg:grid-cols-3",
     4: "md:grid-cols-2 lg:grid-cols-4",
     5: "md:grid-cols-3 lg:grid-cols-5",
-  }[columns] || "md:grid-cols-2 lg:grid-cols-4"
+  }[columns] || "md:grid-cols-2 lg:grid-cols-4";
 
   return (
     <div className={`grid gap-4 ${gridCols}`}>
-      {stats.map((stat, index) => (
-        <Card
-          key={index}
-          className="overflow-hidden shadow-none border bg-gray-950 text-white  mb-4"
-        >
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <div className="text-sm font-medium opacity-80">{stat.title}</div>
-            <div className="rounded-lg p-2 bg-white/10">
-              <stat.icon className="h-4 w-4 text-white" />
-            </div>
-          </CardHeader>
+      {stats.map((stat, index) => {
+        const Icon = stat.icon; // <-- React component
+        return (
+          <Card
+            key={index}
+            className="overflow-hidden shadow-none border bg-gray-950 text-white mb-4"
+          >
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <div className="text-sm font-medium opacity-80">{stat.title}</div>
+              <div className="rounded-lg p-2 bg-white/10">
+                <Icon className="h-4 w-4 text-white" />
+              </div>
+            </CardHeader>
 
-          <CardContent>
-          <div className={`text-2xl font-bold `}>{stat.value}</div>
-            <p className={`text-xs opacity-75 mt-1 ${stat.valueClass ?? ""}`}>{stat.subtitle}</p>
-            <div className="mt-2 flex items-center text-xs">
-              <span
-                className={`font-medium ${
-                  stat.trendUp ? "text-green-900" : "text-red-500"
-                }`}
-              >
-                {stat.trend}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+            <CardContent>
+              <div className={`text-2xl font-bold`}>{stat.value}</div>
+              <p className={`text-xs opacity-75 mt-1 ${stat.valueClass ?? ""}`}>
+                {stat.subtitle}
+              </p>
+              <div className="mt-2 flex items-center text-xs">
+                <span
+                  className={`font-medium ${
+                    stat.trendUp ? "text-green-900" : "text-red-500"
+                  }`}
+                >
+                  {stat.trend}
+                </span>
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
-  )
+  );
 }
