@@ -1,6 +1,5 @@
 // src/components/sessions/RecentSessionsTable.tsx
 
-"use client";
 
 import { useState } from "react";
 import {

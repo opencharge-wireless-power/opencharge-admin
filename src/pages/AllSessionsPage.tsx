@@ -4,28 +4,30 @@ import {
   collection,
   getDocs,
   type DocumentData,
+  type Timestamp,
 } from "firebase/firestore";
 import {
-  Box,
-  Typography,
-  CircularProgress,
-  Grid,
-  Paper,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Chip,
-  Drawer,
-  IconButton,
-  Divider,
-} from "@mui/material";
-import CloseIcon from "@mui/icons-material/Close";
+  Activity,
+  CheckCircle2,
+  Clock,
+  MapPin,
+  Smartphone,
+} from "lucide-react";
 
 import { db } from "../firebase";
-import { MainLayout } from "../components/layout/MainLayout";
+import { PageHeader } from "../components/layout/PageHeader";
+import { OverviewCards } from "@/components/common/cards/overview-card";
+
+
+import { PulseLoader } from "@/components/common/loading/pulse-loader";
+
+
+import { SessionDetailsSheet, type AppChargingEvent } from "@/components/sessions/SessionDetailsSheet";
+import { RecentSessionsTable } from "@/components/sessions/RecentSessionsTable";
+import { TopLocationsChart } from "@/components/sessions/TopLocationsChart";
+import { DeviceMixChart } from "@/components/sessions/DeviceMixChart";
+import { Sessions } from "@/components/icons/Icons";
+
 
 interface SessionItem {
   id: string;
@@ -61,30 +63,6 @@ interface DeviceMixItem {
   share: number; // %
 }
 
-interface AppChargingEvent {
-  id: string;
-  timestamp?: Date;
-  batteryLevel?: number;
-  startBatteryLevel?: number;
-  batteryDelta?: number;
-  isWireless?: boolean;
-  pluggedType?: string;
-  deviceMake?: string;
-  deviceModel?: string;
-  locationId?: string;
-  source?: string;
-}
-
-function formatDateTime(date?: Date): string {
-  if (!date) return "-";
-  return date.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 function formatMinutesAsHours(minutes: number): string {
   if (!Number.isFinite(minutes) || minutes <= 0) return "0 h";
@@ -99,7 +77,9 @@ export function AllSessionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const [sessions, setSessions] = useState<SessionItem[]>([]);
+  // TODO: Check why sessions state is not used  - changed to _sessions for ESLint
+  const [_sessions, setSessions] = useState<SessionItem[]>([]);
+
 
   // KPIs
   const [totalSessions, setTotalSessions] = useState(0);
@@ -213,8 +193,8 @@ export function AllSessionsPage() {
         sessionsSnap.forEach((docSnap) => {
           const data = docSnap.data() as DocumentData;
 
-          const startRaw = data.start as any;
-          const endRaw = data.end as any;
+          const startRaw = data.start as Timestamp | null | undefined;
+          const endRaw = data.end as Timestamp | null | undefined;
 
           const startedAt =
             startRaw && typeof startRaw.toDate === "function"
@@ -526,755 +506,148 @@ export function AllSessionsPage() {
 
   if (loading) {
     return (
-      <MainLayout>
-        <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
-          <CircularProgress />
-        </Box>
-      </MainLayout>
+    <>
+      <PageHeader
+        title="Sessions"
+        breadcrumbs={[{ label: "Sessions", href: "/sessions" }]}
+      />
+
+      <div className="flex flex-1 items-center justify-center p-4">
+        <div className="flex items-center gap-2">
+          {/* Pulsing circle */}
+          <PulseLoader size={8} pulseCount={4} speed={1.5} />
+        </div>
+      </div>
+    </>
+
     );
   }
 
   if (error) {
     return (
-      <MainLayout>
-        <Box sx={{ mt: 3 }}>
-          <Typography variant="h4" gutterBottom>
-            Sessions
-          </Typography>
-          <Typography color="error">{error}</Typography>
-        </Box>
-      </MainLayout>
+      <>
+        <PageHeader
+          title="Sessions"
+          breadcrumbs={[{ label: "Sessions", href: "/sessions" }]}
+        />
+        <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+          <div className="p-4 bg-red-50 border border-red-200 rounded-md text-red-800">
+            {error}
+          </div>
+        </div>
+      </>
     );
   }
 
   return (
-    <MainLayout>
-      {/* Header */}
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h4" gutterBottom>
-          Sessions
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Usage and performance of all charging sessions across locations and
-          units. Click a session to see app details when available.
-        </Typography>
-      </Box>
+    <>
+      <PageHeader
+        title="Sessions"
+        breadcrumbs={[{ label: "Sessions", href: "/sessions" }]}
+      />
 
-      {/* KPI cards */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        {/* Sessions last 7 days */}
-        <Grid item xs={12} sm={6} md={3}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              border: "1px solid",
-              borderColor: "divider",
-            }}
-          >
-            <Typography variant="subtitle2" color="text.secondary">
-              Sessions (last 7 days)
-            </Typography>
-            <Typography variant="h4">{sessionsLast7Days}</Typography>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              display="block"
-            >
-              {sessionsToday} today
-            </Typography>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              display="block"
-            >
-              Out of {totalSessions} total sessions
-            </Typography>
-          </Paper>
-        </Grid>
+      <div className="flex flex-1 flex-col gap-4 p-4 pt-0 pl-64">
+        {/* Header section */}
+        <div className="flex justify-between items-center">
+          <div>
+            <p className="text-muted-foreground">
+              Usage and performance of all charging sessions across locations
+              and units. Click a session to see app details when available.
+            </p>
+          </div>
+        </div>
 
-        {/* Avg duration */}
-        <Grid item xs={12} sm={6} md={3}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              border: "1px solid",
-              borderColor: "divider",
-            }}
-          >
-            <Typography variant="subtitle2" color="text.secondary">
-              Avg duration (last 7 days)
-            </Typography>
-            <Typography variant="h4">
-              {avgDurationLast7 != null
-                ? `${avgDurationLast7.toFixed(1)} min`
-                : "–"}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Based on completed sessions
-            </Typography>
-          </Paper>
-        </Grid>
+        {/* KPI cards - Row 1 */}
+        <OverviewCards
+          columns={4}
+          stats={[
+            {
+              title: "Sessions (last 7 days)",
+              value: sessionsLast7Days.toString(),
+              subtitle: `${sessionsToday} today • Out of ${totalSessions} total sessions`,
+              icon: Sessions,
+            },
+            {
+              title: "Avg Duration (last 7 days)",
+              value:
+                avgDurationLast7 != null
+                  ? `${avgDurationLast7.toFixed(1)} min`
+                  : "–",
+              subtitle: "Based on completed sessions",
+              icon: Clock,
+            },
+            {
+              title: "Total Charge Time (last 7 days)",
+              value: formatMinutesAsHours(totalDurationLast7),
+              subtitle: "Sum of all session durations",
+              icon: Activity,
+            },
+            {
+              title: "Active Locations (last 7 days)",
+              value: activeLocationsLast7.toString(),
+              subtitle: `Out of ${totalLocations} total locations`,
+              icon: MapPin,
+            },
+          ]}
+        />
 
-        {/* Total charge time */}
-        <Grid item xs={12} sm={6} md={3}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              border: "1px solid",
-              borderColor: "divider",
-            }}
-          >
-            <Typography variant="subtitle2" color="text.secondary">
-              Total charge time (last 7 days)
-            </Typography>
-            <Typography variant="h4">
-              {formatMinutesAsHours(totalDurationLast7)}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Sum of all session durations
-            </Typography>
-          </Paper>
-        </Grid>
+        {/* KPI cards - Row 2 */}
+        <OverviewCards
+          columns={2}
+          stats={[
+            {
+              title: "Session Success Rate (last 7 days)",
+              value:
+                successRateLast7 != null
+                  ? `${successRateLast7.toFixed(1)}%`
+                  : "–",
+              subtitle: `${successSessionsLast7} successful • ${failedSessionsLast7} failed / errored`,
+              icon: CheckCircle2,
+            },
+            {
+              title: "App-linked Sessions (last 7 days)",
+              value: appSessionsLast7.toString(),
+              subtitle: `${
+                sessionsLast7Days > 0
+                  ? `${Math.round(
+                      (appSessionsLast7 / sessionsLast7Days) * 100
+                    )}% of sessions`
+                  : "–"
+              } • Avg battery delta: ${
+                avgAppBatteryDeltaLast7 != null
+                  ? `${avgAppBatteryDeltaLast7.toFixed(0)}%`
+                  : "–"
+              }`,
+              icon: Smartphone,
+            },
+          ]}
+        />
 
-        {/* Active locations */}
-        <Grid item xs={12} sm={6} md={3}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              border: "1px solid",
-              borderColor: "divider",
-            }}
-          >
-            <Typography variant="subtitle2" color="text.secondary">
-              Active locations (last 7 days)
-            </Typography>
-            <Typography variant="h4">{activeLocationsLast7}</Typography>
-            <Typography variant="caption" color="text.secondary">
-              Out of {totalLocations} total locations
-            </Typography>
-          </Paper>
-        </Grid>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Top locations chart */}
+          <TopLocationsChart locations={topLocations} />
 
-        {/* Success rate card */}
-        <Grid item xs={12} sm={6} md={3}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              border: "1px solid",
-              borderColor: "divider",
-              mt: { xs: 0, md: 2 },
-            }}
-          >
-            <Typography variant="subtitle2" color="text.secondary">
-              Session success rate (last 7 days)
-            </Typography>
-            <Typography variant="h4">
-              {successRateLast7 != null
-                ? `${successRateLast7.toFixed(1)}%`
-                : "–"}
-            </Typography>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              display="block"
-            >
-              {successSessionsLast7} successful
-            </Typography>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              display="block"
-            >
-              {failedSessionsLast7} failed / errored
-            </Typography>
-          </Paper>
-        </Grid>
+          {/* Device mix chart */}
+          <DeviceMixChart devices={deviceMix} />
+        </div>
 
-        {/* App-linked sessions */}
-        <Grid item xs={12} sm={6} md={3}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              border: "1px solid",
-              borderColor: "divider",
-              mt: { xs: 0, md: 2 },
-            }}
-          >
-            <Typography variant="subtitle2" color="text.secondary">
-              App-linked sessions (last 7 days)
-            </Typography>
-            <Typography variant="h4">{appSessionsLast7}</Typography>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              display="block"
-            >
-              {sessionsLast7Days > 0
-                ? `${Math.round(
-                    (appSessionsLast7 / sessionsLast7Days) * 100
-                  )}% of sessions`
-                : "–"}
-            </Typography>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              display="block"
-            >
-              Avg battery delta:{" "}
-              {avgAppBatteryDeltaLast7 != null
-                ? `${avgAppBatteryDeltaLast7.toFixed(0)}%`
-                : "–"}
-            </Typography>
-          </Paper>
-        </Grid>
-      </Grid>
 
-      {/* Top locations table */}
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Top 5 locations by sessions (last 7 days)
-        </Typography>
-
-        <TableContainer
-          component={Paper}
-          sx={{
-            borderRadius: 2,
-            border: "1px solid",
-            borderColor: "divider",
-          }}
-        >
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Location</TableCell>
-                <TableCell align="right">Sessions</TableCell>
-                <TableCell align="right">Total charge time</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {topLocations.map((loc) => (
-                <TableRow key={loc.locationId ?? loc.locationName}>
-                  <TableCell>{loc.locationName}</TableCell>
-                  <TableCell align="right">{loc.sessions}</TableCell>
-                  <TableCell align="right">
-                    {formatMinutesAsHours(loc.totalDurationMinutes)}
-                  </TableCell>
-                </TableRow>
-              ))}
-
-              {topLocations.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={3}>
-                    <Typography
-                      align="center"
-                      variant="body2"
-                      sx={{ py: 2 }}
-                      color="text.secondary"
-                    >
-                      No sessions recorded in the last 7 days.
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Box>
-
-      {/* Device mix table */}
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Device mix (last 7 days)
-        </Typography>
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          sx={{ mb: 1 }}
-        >
-          Top device types seen in sessions over the last week.
-        </Typography>
-
-        <TableContainer
-          component={Paper}
-          sx={{
-            borderRadius: 2,
-            border: "1px solid",
-            borderColor: "divider",
-          }}
-        >
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Device type</TableCell>
-                <TableCell align="right">Sessions</TableCell>
-                <TableCell align="right">% of sessions</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {deviceMix.map((d) => (
-                <TableRow key={d.deviceType}>
-                  <TableCell>{d.deviceType}</TableCell>
-                  <TableCell align="right">{d.sessions}</TableCell>
-                  <TableCell align="right">
-                    {d.share.toFixed(1)}%
-                  </TableCell>
-                </TableRow>
-              ))}
-
-              {deviceMix.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={3}>
-                    <Typography
-                      align="center"
-                      variant="body2"
-                      sx={{ py: 2 }}
-                      color="text.secondary"
-                    >
-                      No device data available for the last 7 days.
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Box>
-
-      {/* Recent sessions table */}
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Recent sessions
-        </Typography>
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          sx={{ mb: 1 }}
-        >
-          Last {recentSessions.length} sessions across all locations. Click a
-          row to view app details if available.
-        </Typography>
-
-        <TableContainer
-          component={Paper}
-          sx={{
-            borderRadius: 2,
-            border: "1px solid",
-            borderColor: "divider",
-          }}
-        >
-          <Table size="small">
-            <TableHead>
-              <TableRow>
-                <TableCell>Location</TableCell>
-                <TableCell>Unit</TableCell>
-                <TableCell>App</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Started</TableCell>
-                <TableCell>Ended</TableCell>
-                <TableCell align="right">Duration (min)</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {recentSessions.map((s) => (
-                <TableRow
-                  key={s.id}
-                  hover
-                  sx={{ cursor: "pointer" }}
-                  onClick={() => {
-                    void handleSessionClick(s);
-                  }}
-                >
-                  <TableCell>
-                    <Typography variant="body2">
-                      {s.locationName ?? s.locationId ?? "-"}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Typography variant="body2">
-                      {s.unitName ?? s.unitId ?? "-"}
-                    </Typography>
-                  </TableCell>
-                  <TableCell>
-                    {s.appLinked ? (
-                      <Chip
-                        size="small"
-                        color="info"
-                        label={
-                          s.appBatteryDelta != null
-                            ? `App (${s.appBatteryDelta.toFixed(0)}%)`
-                            : "App"
-                        }
-                      />
-                    ) : (
-                      "-"
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {s.status ? (
-                      <Chip
-                        label={
-                          s.status === "completed"
-                            ? "Completed"
-                            : "In progress"
-                        }
-                        size="small"
-                        color={
-                          s.status === "completed" ? "success" : "info"
-                        }
-                      />
-                    ) : (
-                      "-"
-                    )}
-                  </TableCell>
-                  <TableCell>{formatDateTime(s.startedAt)}</TableCell>
-                  <TableCell>{formatDateTime(s.endedAt)}</TableCell>
-                  <TableCell align="right">
-                    {s.durationMinutes != null
-                      ? s.durationMinutes.toFixed(0)
-                      : "-"}
-                  </TableCell>
-                </TableRow>
-              ))}
-
-              {recentSessions.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7}>
-                    <Typography align="center" sx={{ py: 2 }}>
-                      No sessions found.
-                    </Typography>
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Box>
+        {/* Recent sessions table */}
+        <RecentSessionsTable 
+          sessions={recentSessions} 
+          onSessionClick={handleSessionClick}
+        />
+      </div>
 
       {/* SIDE PANEL: selected session + app details */}
-      <Drawer
-        anchor="right"
+      <SessionDetailsSheet
+        session={selectedSession}
+        appEvents={appEvents}
+        appEventsLoading={appEventsLoading}
+        appEventsError={appEventsError}
         open={Boolean(selectedSession)}
-        onClose={handleCloseDrawer}
-        PaperProps={{
-          sx: { width: { xs: "100%", sm: 500, md: 650, lg: 720 } },
-        }}
-      >
-        {selectedSession && (
-          <Box
-            sx={{
-              display: "flex",
-              flexDirection: "column",
-              height: "100%",
-            }}
-          >
-            {/* Header */}
-            <Box
-              sx={{
-                px: 2,
-                py: 1.5,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-              }}
-            >
-              <Box>
-                <Typography variant="subtitle2" color="text.secondary">
-                  Session details
-                </Typography>
-                <Typography variant="h6">
-                  {selectedSession.unitName ??
-                    selectedSession.unitId ??
-                    selectedSession.id}
-                </Typography>
-              </Box>
-              <IconButton
-                onClick={handleCloseDrawer}
-                size="small"
-                aria-label="Close"
-              >
-                <CloseIcon />
-              </IconButton>
-            </Box>
-
-            <Divider />
-
-            {/* Content */}
-            <Box
-              sx={{
-                flex: 1,
-                overflow: "auto",
-                px: 2,
-                py: 2,
-              }}
-            >
-              <Grid container spacing={2} sx={{ mb: 2 }}>
-                {/* Summary */}
-                <Grid item xs={12}>
-                  <Paper
-                    elevation={0}
-                    sx={{
-                      p: 2,
-                      borderRadius: 2,
-                      border: "1px solid",
-                      borderColor: "divider",
-                    }}
-                  >
-                    <Typography variant="subtitle1" gutterBottom>
-                      Summary
-                    </Typography>
-
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                    >
-                      Location
-                    </Typography>
-                    <Typography variant="body1" sx={{ mb: 1 }}>
-                      {selectedSession.locationName ??
-                        selectedSession.locationId ??
-                        "–"}
-                    </Typography>
-
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                    >
-                      Unit
-                    </Typography>
-                    <Typography variant="body1" sx={{ mb: 1 }}>
-                      {selectedSession.unitName ??
-                        selectedSession.unitId ??
-                        "–"}
-                    </Typography>
-
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                    >
-                      Status
-                    </Typography>
-                    <Typography variant="body1" sx={{ mb: 1 }}>
-                      {selectedSession.status ?? "–"}
-                    </Typography>
-
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                    >
-                      Started
-                    </Typography>
-                    <Typography variant="body1" sx={{ mb: 1 }}>
-                      {formatDateTime(selectedSession.startedAt)}
-                    </Typography>
-
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                    >
-                      Ended
-                    </Typography>
-                    <Typography variant="body1" sx={{ mb: 1 }}>
-                      {formatDateTime(selectedSession.endedAt)}
-                    </Typography>
-
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                    >
-                      Duration
-                    </Typography>
-                    <Typography variant="body1">
-                      {selectedSession.durationMinutes != null
-                        ? `${selectedSession.durationMinutes.toFixed(
-                            0
-                          )} min`
-                        : "–"}
-                    </Typography>
-                  </Paper>
-                </Grid>
-
-                {/* App summary */}
-                <Grid item xs={12}>
-                  <Paper
-                    elevation={0}
-                    sx={{
-                      p: 2,
-                      borderRadius: 2,
-                      border: "1px solid",
-                      borderColor: "divider",
-                    }}
-                  >
-                    <Typography variant="subtitle1" gutterBottom>
-                      App summary
-                    </Typography>
-
-                    {!selectedSession.appLinked ? (
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                      >
-                        No app data recorded for this session.
-                      </Typography>
-                    ) : (
-                      <>
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                        >
-                          Device
-                        </Typography>
-                        <Typography variant="body1" sx={{ mb: 1 }}>
-                          {(selectedSession.appDeviceMake ?? "Unknown") +
-                            " " +
-                            (selectedSession.appDeviceModel ?? "")}
-                        </Typography>
-
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                        >
-                          App location
-                        </Typography>
-                        <Typography variant="body1" sx={{ mb: 1 }}>
-                          {selectedSession.appLocationId ?? "–"}
-                        </Typography>
-
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                        >
-                          Battery change
-                        </Typography>
-                        <Typography variant="body1">
-                          {selectedSession.appBatteryStartLevel != null &&
-                          selectedSession.appBatteryEndLevel != null &&
-                          selectedSession.appBatteryDelta != null
-                            ? `${selectedSession.appBatteryStartLevel}% → ${
-                                selectedSession.appBatteryEndLevel
-                              }% (${selectedSession.appBatteryDelta.toFixed(
-                                0
-                              )}%)`
-                            : selectedSession.appBatteryDelta != null
-                            ? `${selectedSession.appBatteryDelta.toFixed(
-                                0
-                              )}%`
-                            : "–"}
-                        </Typography>
-                      </>
-                    )}
-                  </Paper>
-                </Grid>
-              </Grid>
-
-              {/* App charging events table */}
-              <Typography variant="subtitle1" gutterBottom>
-                App charging events
-              </Typography>
-
-              {appEventsLoading && (
-                <Box
-                  sx={{ display: "flex", justifyContent: "center", my: 2 }}
-                >
-                  <CircularProgress size={24} />
-                </Box>
-              )}
-
-              {appEventsError && (
-                <Typography color="error" sx={{ mb: 1 }}>
-                  {appEventsError}
-                </Typography>
-              )}
-
-              {!appEventsLoading && !appEventsError && (
-                <TableContainer
-                  component={Paper}
-                  sx={{
-                    borderRadius: 2,
-                    border: "1px solid",
-                    borderColor: "divider",
-                    mb: 2,
-                  }}
-                >
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>Time</TableCell>
-                        <TableCell>Battery</TableCell>
-                        <TableCell>Wireless</TableCell>
-                        <TableCell>Plugged type</TableCell>
-                        <TableCell>Device</TableCell>
-                        <TableCell>Location (app)</TableCell>
-                        <TableCell>Source</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {appEvents.map((e) => (
-                        <TableRow key={e.id}>
-                          <TableCell>{formatDateTime(e.timestamp)}</TableCell>
-                          <TableCell>
-                            {e.startBatteryLevel != null ||
-                            e.batteryLevel != null
-                              ? `${e.startBatteryLevel ?? "?"}% → ${
-                                  e.batteryLevel ?? "?"
-                                }%${
-                                  e.batteryDelta != null
-                                    ? ` (${e.batteryDelta.toFixed(0)}%)`
-                                    : ""
-                                }`
-                              : "–"}
-                          </TableCell>
-                          <TableCell>
-                            {e.isWireless != null
-                              ? e.isWireless
-                                ? "Yes"
-                                : "No"
-                              : "–"}
-                          </TableCell>
-                          <TableCell>{e.pluggedType ?? "–"}</TableCell>
-                          <TableCell>
-                            {(e.deviceMake ?? "Unknown") +
-                              " " +
-                              (e.deviceModel ?? "")}
-                          </TableCell>
-                          <TableCell>{e.locationId ?? "–"}</TableCell>
-                          <TableCell>{e.source ?? "–"}</TableCell>
-                        </TableRow>
-                      ))}
-
-                      {appEvents.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={7}>
-                            <Typography
-                              align="center"
-                              variant="body2"
-                              color="text.secondary"
-                              sx={{ py: 2 }}
-                            >
-                              No app charging events logged for this session.
-                            </Typography>
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              )}
-            </Box>
-          </Box>
-        )}
-      </Drawer>
-    </MainLayout>
+        onOpenChange={handleCloseDrawer}
+      />
+    </>
   );
 }
