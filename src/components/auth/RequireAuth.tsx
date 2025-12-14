@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Navigate, useLocation } from "react-router-dom";
-import { Box, CircularProgress } from "@mui/material";
-import { useAuth } from "../../hooks/useAuth";
+import { Loader2 } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
 
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { user, userLoading } = useAuth();
@@ -9,16 +9,9 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 
   if (userLoading) {
     return (
-      <Box
-        sx={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <CircularProgress />
-      </Box>
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
     );
   }
 
