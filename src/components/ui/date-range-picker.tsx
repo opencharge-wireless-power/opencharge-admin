@@ -1,5 +1,5 @@
 /* eslint-disable max-lines */
-"use client";
+
 
 import React, { type FC, useState, useEffect, useRef } from "react";
 import { Button } from "./button";
@@ -97,7 +97,7 @@ export const DateRangePicker: FC<DateRangePickerProps> & {
   locale = "en-US",
   showCompare = true,
   datesWithData = [], // Add this
-}): JSX.Element => {
+}): React.JSX.Element => {
   const [isOpen, setIsOpen] = useState(false);
 
   const [range, setRange] = useState<DateRange>({
@@ -118,8 +118,11 @@ export const DateRangePicker: FC<DateRangePickerProps> & {
   );
 
   // Refs to store the values of range and rangeCompare when the date picker is opened
-  const openedRangeRef = useRef<DateRange | undefined>();
-  const openedRangeCompareRef = useRef<DateRange | undefined>();
+
+
+  const openedRangeRef = useRef<DateRange | undefined>(undefined);
+  const openedRangeCompareRef = useRef<DateRange | undefined>(undefined);
+
 
   const [selectedPreset, setSelectedPreset] = useState<string | undefined>(
     undefined
@@ -298,7 +301,7 @@ export const DateRangePicker: FC<DateRangePickerProps> & {
     preset: string;
     label: string;
     isSelected: boolean;
-  }): JSX.Element => (
+  }): React.JSX.Element => (
     <Button
       className={cn(isSelected && "pointer-events-none")}
       variant="ghost"
