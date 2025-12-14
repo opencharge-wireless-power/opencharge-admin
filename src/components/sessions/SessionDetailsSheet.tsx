@@ -19,7 +19,7 @@ import {
     SheetHeader,
     SheetTitle,
   } from "@/components/ui/sheet";
-import { PulseLoader } from "@/components/common/loading/pulse-loader";
+import { PulseLoader } from "@/components/common/loading/pulse-loader"
 import { Button } from "@/components/ui/button";
 
 interface SessionItem {

@@ -546,7 +546,7 @@ export function AllSessionsPage() {
         breadcrumbs={[{ label: "Sessions", href: "/sessions" }]}
       />
 
-      <div className="flex flex-1 flex-col gap-4 p-4 pt-0 pl-64">
+      <div className="gap-4 p-4 pt-0 ">
         {/* Header section */}
         <div className="flex justify-between items-center">
           <div>
