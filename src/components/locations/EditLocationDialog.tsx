@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
-import type { Location, EditFormState, OpenHours } from "@/types/Opencharge";
+import type { Location, EditFormState } from "@/types/Opencharge";
 import { ORDERED_DAYS } from "@/utils/Format";
 
 interface EditLocationDialogProps {

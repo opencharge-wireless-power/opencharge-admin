@@ -1,5 +1,5 @@
 // src/components/dashboard/RecentSessionsTable.tsx
-import * as React from "react";
+
 import {
   useReactTable,
   getCoreRowModel,
