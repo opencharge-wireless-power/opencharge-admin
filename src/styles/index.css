@@ -4,6 +4,11 @@
 @import './theme.css';
 
 
+/* Ensure full height layout */
+html, body, #root {
+  height: 100%;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
@@ -14,7 +19,7 @@
     @apply overflow-x-hidden;
   }
   body {
-    @apply bg-background text-foreground has-[div[data-variant='inset']]:bg-sidebar min-h-svh w-full;
+    @apply bg-background text-foreground has-[div[data-variant='inset']]:bg-sidebar min-h-screen w-full;
   }
 
   /* Override Radix scroll locking for sticky headers */
