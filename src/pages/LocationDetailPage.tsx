@@ -1,6 +1,5 @@
 // src/pages/LocationDetailPage.tsx
-import { useEffect, useState, Fragment } from "react";
-import type { FormEvent, ChangeEvent } from "react";
+import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   doc,
@@ -21,51 +20,27 @@ import {
 import { db } from "../firebase";
 import { MainLayout } from "../components/layout/MainLayout";
 import { useAuth } from "../hooks/useAuth";
+import { ArrowLeft, Loader2 } from "lucide-react";
 
-import {
-  Box,
-  Typography,
-  Chip,
-  Card,
-  CardContent,
-  Divider,
-  List,
-  ListItem,
-  ListItemText,
-  Stack,
-  CircularProgress,
-  Button,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  FormControlLabel,
-  Switch,
-  Table,
-  TableHead,
-  TableRow,
-  TableCell,
-  TableBody,
-  TableContainer,
-  Paper,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Checkbox,
-  Drawer,
-  IconButton,
-} from "@mui/material";
-import Grid from "@mui/material/Grid";
-import ToggleButton from "@mui/material/ToggleButton";
-import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
-import CloseIcon from "@mui/icons-material/Close";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
-import { QRCodeSVG } from "qrcode.react";
-import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import { PageHeader } from "@/components/layout/PageHeader";
 
-// Shared types & helpers
+// Reusable components
+import { LocationInfoCards } from "@/components/locations/LocationInfoCards";
+import { UnitsTable } from "@/components/locations/UnitsTable";
+import { LocationSessionsTable } from "@/components/locations/LocationSessionsTable";
+import { EditLocationDialog } from "@/components/locations/EditLocationDialog";
+import { EditUnitDialog } from "@/components/locations/EditUnitDialog";
+import { SessionDetailDrawer } from "@/components/locations/SessionDetailDrawer";
+import { EditImagesDialog } from "@/components/locations/EditImagesDialog";
+import { PromotionsSection } from "@/components/locations/PromotionsSection";
+import { EngageCampaignsTable } from "@/components/locations/EngageCampaignsTable";
+import { CampaignsSection } from "@/components/locations/CampaignsSection";
+
+// UI components
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+
+// Types & helpers
 import type {
   Location,
   EditFormState,
@@ -78,17 +53,9 @@ import type {
   UnitHealth,
   UnitMetrics,
   UnitInteractions,
+  StoreEngageCampaign,
 } from "../types/Opencharge";
-
-import type { StoreEngageCampaign } from "../types/Opencharge";
-import {
-  formatDateTime,
-  formatDurationMinutes,
-  formatDateRange,
-  formatShortDateTime,
-  formatPercent,
-  ORDERED_DAYS,
-} from "../utils/Format";
+import { ORDERED_DAYS } from "../utils/Format";
 
 interface LocationCampaign {
   id: string;
@@ -100,6 +67,7 @@ interface LocationCampaign {
   targetUrl?: string;
   createdAt?: Date;
 }
+
 function deriveQrCodeFromId(
   locationId: string | undefined,
   base = "https://opencharge.io/e"
@@ -121,6 +89,7 @@ const slugify = (value: string) =>
     .replace(/&/g, "and")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
+
 // ---------- Component ----------
 
 export function LocationDetailPage() {
@@ -135,9 +104,6 @@ export function LocationDetailPage() {
 
   // Location edit dialog
   const [isEditOpen, setIsEditOpen] = useState(false);
-  const [editForm, setEditForm] = useState<EditFormState | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Units
   const [units, setUnits] = useState<Unit[]>([]);
@@ -147,9 +113,7 @@ export function LocationDetailPage() {
   // Unit add/edit dialog
   const [isUnitDialogOpen, setIsUnitDialogOpen] = useState(false);
   const [unitDialogMode, setUnitDialogMode] = useState<"add" | "edit">("add");
-  const [unitForm, setUnitForm] = useState<UnitEditForm | null>(null);
-  const [unitSaving, setUnitSaving] = useState(false);
-  const [unitSaveError, setUnitSaveError] = useState<string | null>(null);
+  const [selectedUnit, setSelectedUnit] = useState<Unit | undefined>(undefined);
 
   // Sessions
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -177,15 +141,14 @@ export function LocationDetailPage() {
   const [campaignsLoading, setCampaignsLoading] = useState(true);
   const [campaignsError, setCampaignsError] = useState<string | null>(null);
 
-  const [engageCampaigns, setEngageCampaigns] = useState<StoreEngageCampaign[]>([]);
-const [engageLoading, setEngageLoading] = useState(false);
-const [engageError, setEngageError] = useState<string | null>(null);
+  const [engageCampaigns, setEngageCampaigns] = useState<StoreEngageCampaign[]>(
+    []
+  );
+  const [engageLoading, setEngageLoading] = useState(false);
+  const [engageError, setEngageError] = useState<string | null>(null);
 
   // Images dialog
   const [imagesDialogOpen, setImagesDialogOpen] = useState(false);
-  const [imagesText, setImagesText] = useState("");
-  const [savingImages, setSavingImages] = useState(false);
-  const [imagesError, setImagesError] = useState<string | null>(null);
 
   // ---------- Fetch LOCATION ----------
   useEffect(() => {
@@ -234,9 +197,9 @@ const [engageError, setEngageError] = useState<string | null>(null);
 
           brand: (data.brand as string | undefined) ?? "",
           storeLocation: (data.storeLocation as string | undefined) ?? "",
-           qrCode:
-                  (data.qrCode as string | undefined) ??
-                  deriveQrCodeFromId(snapshot.id),
+          qrCode:
+            (data.qrCode as string | undefined) ??
+            deriveQrCodeFromId(snapshot.id),
 
           hasActivePromotion:
             (data.hasActivePromotion as boolean | undefined) ?? false,
@@ -283,59 +246,59 @@ const [engageError, setEngageError] = useState<string | null>(null);
     void fetchLocation();
   }, [id]);
 
-  //----------- Fetch Egage Campaign ----------
+  // ---------- Fetch Engage Campaigns ----------
   useEffect(() => {
-  const fetchEngageCampaigns = async () => {
-    if (!location?.brand || !location?.storeLocation) return;
+    const fetchEngageCampaigns = async () => {
+      if (!location?.brand || !location?.storeLocation) return;
 
-    setEngageLoading(true);
-    setEngageError(null);
+      setEngageLoading(true);
+      setEngageError(null);
 
-    try {
-      const brandSlug = slugify(location.brand);
-      const storeSlug = slugify(location.storeLocation);
+      try {
+        const brandSlug = slugify(location.brand);
+        const storeSlug = slugify(location.storeLocation);
 
-      const campaignsRef = collection(
-        db,
-        "engage",
-        brandSlug,
-        "stores",
-        storeSlug,
-        "campaigns"
-      );
-
-      const snap = await getDocs(campaignsRef);
-
-      const items: StoreEngageCampaign[] = snap.docs.map((docSnap) => {
-        const data = docSnap.data() as DocumentData;
-
-        return {
-          id: docSnap.id,
-          campaignId: (data.campaignId as string) ?? docSnap.id,
-          name: (data.name as string) ?? "Untitled campaign",
-          active: (data.active as boolean | undefined) ?? false,
-          engagements:
-            typeof data.engagements === "number" ? data.engagements : 0,
-          url: data.url as string | undefined,
-          targetUrl: data.targetUrl as string | undefined,
+        const campaignsRef = collection(
+          db,
+          "engage",
           brandSlug,
+          "stores",
           storeSlug,
-          locationId: location.id,
-        };
-      });
+          "campaigns"
+        );
 
-      setEngageCampaigns(items);
-    } catch (err) {
-      setEngageError(
-        err instanceof Error ? err.message : "Failed to load Engage campaigns"
-      );
-    } finally {
-      setEngageLoading(false);
-    }
-  };
+        const snap = await getDocs(campaignsRef);
 
-  fetchEngageCampaigns();
-}, [location]);
+        const items: StoreEngageCampaign[] = snap.docs.map((docSnap) => {
+          const data = docSnap.data() as DocumentData;
+
+          return {
+            id: docSnap.id,
+            campaignId: (data.campaignId as string) ?? docSnap.id,
+            name: (data.name as string) ?? "Untitled campaign",
+            active: (data.active as boolean | undefined) ?? false,
+            engagements:
+              typeof data.engagements === "number" ? data.engagements : 0,
+            url: data.url as string | undefined,
+            targetUrl: data.targetUrl as string | undefined,
+            brandSlug,
+            storeSlug,
+            locationId: location.id,
+          };
+        });
+
+        setEngageCampaigns(items);
+      } catch (err) {
+        setEngageError(
+          err instanceof Error ? err.message : "Failed to load Engage campaigns"
+        );
+      } finally {
+        setEngageLoading(false);
+      }
+    };
+
+    void fetchEngageCampaigns();
+  }, [location]);
 
   // ---------- Fetch UNITS ----------
   useEffect(() => {
@@ -354,8 +317,12 @@ const [engageError, setEngageError] = useState<string | null>(null);
           const data = docSnap.data() as DocumentData;
 
           const lastHeartbeatTs = data.lastHeartbeat as Timestamp | undefined;
-          const lastInteractionTs = data.lastInteraction as Timestamp | undefined;
-          const lastSessionTs = data.lastSessionTimestamp as Timestamp | undefined;
+          const lastInteractionTs = data.lastInteraction as
+            | Timestamp
+            | undefined;
+          const lastSessionTs = data.lastSessionTimestamp as
+            | Timestamp
+            | undefined;
 
           const healthRaw = data.health as
             | {
@@ -449,7 +416,9 @@ const [engageError, setEngageError] = useState<string | null>(null);
 
             status: data.status as string | undefined,
             inUse:
-              typeof data.inUse === "boolean" ? (data.inUse as boolean) : undefined,
+              typeof data.inUse === "boolean"
+                ? (data.inUse as boolean)
+                : undefined,
 
             currentDeviceType: data.currentDeviceType as string | undefined,
             currentMode: data.currentMode as string | undefined,
@@ -465,7 +434,8 @@ const [engageError, setEngageError] = useState<string | null>(null);
             lastInteractionType: data.lastInteractionType as string | undefined,
             lastInteractionMode: data.lastInteractionMode as string | undefined,
             lastInteractionDeviceType:
-              (data.lastInteractionDeviceType as string | undefined) ?? undefined,
+              (data.lastInteractionDeviceType as string | undefined) ??
+              undefined,
 
             lastSessionDuration:
               typeof data.lastSessionDuration === "number"
@@ -505,93 +475,88 @@ const [engageError, setEngageError] = useState<string | null>(null);
     void fetchUnits();
   }, [id]);
 
-// ---------- Fetch SESSIONS ----------
-useEffect(() => {
-  const fetchSessions = async () => {
-    if (!id) {
-      setSessionsLoading(false);
-      return;
-    }
+  // ---------- Fetch SESSIONS ----------
+  useEffect(() => {
+    const fetchSessions = async () => {
+      if (!id) {
+        setSessionsLoading(false);
+        return;
+      }
 
-    // If the location has no units, we can bail early
-    if (!units || units.length === 0) {
-      setSessions([]);
-      setSessionsLoading(false);
-      return;
-    }
+      if (!units || units.length === 0) {
+        setSessions([]);
+        setSessionsLoading(false);
+        return;
+      }
 
-    setSessionsLoading(true);
-    setSessionsError(null);
+      try {
+        const particleDeviceIds = units
+          .map((u) => u.particleDeviceId)
+          .filter((pid): pid is string => !!pid);
 
-    try {
-      // 1) Get latest chargesessions from Firestore
-      const sessionsRef = collection(db, "chargesessions");
-      const qSessions = query(
-        sessionsRef,
-        orderBy("start", "desc"),
-        limit(200) // adjust as needed
-      );
+        if (particleDeviceIds.length === 0) {
+          setSessions([]);
+          setSessionsLoading(false);
+          return;
+        }
 
-      const snapshot = await getDocs(qSessions);
+        const sessionsRef = collectionGroup(db, "sessions");
+        const qSessions = query(
+          sessionsRef,
+          where("particleDeviceId", "in", particleDeviceIds),
+          orderBy("startedAt", "desc"),
+          limit(200)
+        );
 
-      // 2) Index units for quick lookup by unitId
-      const unitsById = new Map(units.map((u) => [u.id, u]));
-      const locationUnitIds = new Set(units.map((u) => u.id));
+        const snapshot = await getDocs(qSessions);
 
-      // 3) Build our Session objects, only keeping sessions
-      //    whose unitId belongs to this location
-      const items: Session[] = snapshot.docs
-        .map((docSnap) => {
+        const sessionItems: Session[] = snapshot.docs.map((docSnap) => {
           const data = docSnap.data() as DocumentData;
 
-          const startTs = data.start as Timestamp | undefined;
-          const endTs = data.end as Timestamp | undefined;
+          const startedAtTs = data.startedAt as Timestamp | undefined;
+          const endedAtTs = data.endedAt as Timestamp | undefined;
 
-          const startedAt = startTs ? startTs.toDate() : undefined;
-          const endedAt = endTs ? endTs.toDate() : undefined;
+          const inProgress = !data.endedAt;
 
-          const durationMinutes =
-            typeof data.duration === "number" ? data.duration : undefined;
+          const startedAt = startedAtTs ? startedAtTs.toDate() : undefined;
+          const endedAt = endedAtTs ? endedAtTs.toDate() : undefined;
 
-          const inProgress = !endedAt;
+          let durationMinutes = 0;
+          if (startedAt && endedAt) {
+            const diff = endedAt.getTime() - startedAt.getTime();
+            durationMinutes = diff / 1000 / 60;
+          }
 
-          const unitId = data.unitId as string | undefined;
-          const unit = unitId ? unitsById.get(unitId) : undefined;
+          const particleDeviceId = data.particleDeviceId as string | undefined;
+          const matchingUnit = units.find(
+            (u) => u.particleDeviceId === particleDeviceId
+          );
 
-          // If this session's unit does not belong to this location,
-          // we'll drop it later in the filter step.
           return {
             id: docSnap.id,
-            unitId,
-            particleDeviceId: data.id as string | undefined,
-            deviceType: data.deviceType as string | undefined,
-            mode: data.mode as string | undefined,
-
-            // joined fields
-            unitName: unit?.name,
-            locationId: id,
-
+            locationId: data.locationId as string | undefined,
+            unitId: data.unitId as string | undefined,
+            unitName: matchingUnit?.name,
             startedAt,
             endedAt,
-            durationMinutes,
             inProgress,
+            durationMinutes,
             raw: data,
-          } as Session;
-        })
-        .filter((s) => !s.unitId || locationUnitIds.has(s.unitId)); // keep only this location's units
+          };
+        });
 
-      setSessions(items);
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to load sessions";
-      setSessionsError(message);
-    } finally {
-      setSessionsLoading(false);
-    }
-  };
+        setSessions(sessionItems);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to load sessions";
+        setSessionsError(message);
+      } finally {
+        setSessionsLoading(false);
+      }
+    };
 
-  void fetchSessions();
-}, [id, units]);
+    void fetchSessions();
+  }, [id, units]);
 
   // ---------- Fetch PROMOTIONS ----------
   useEffect(() => {
@@ -603,35 +568,14 @@ useEffect(() => {
 
       try {
         const promotionsRef = collection(db, "promotions");
-        const qPromos = query(promotionsRef, where("locationId", "==", id));
-        const snapshot = await getDocs(qPromos);
+        const qPromotions = query(promotionsRef, where("locationId", "==", id));
+        const snapshot = await getDocs(qPromotions);
 
-        const items: Promotion[] = snapshot.docs.map((docSnap) => {
+        const promoItems: Promotion[] = snapshot.docs.map((docSnap) => {
           const data = docSnap.data() as DocumentData;
 
-          const validFromRaw = data.validFrom as number | Timestamp | undefined;
-          const validToRaw = data.validTo as number | Timestamp | undefined;
-
-          let validFrom: Date | undefined;
-          let validTo: Date | undefined;
-
-          if (typeof validFromRaw === "number") {
-            validFrom = new Date(validFromRaw);
-          } else if (
-            validFromRaw &&
-            typeof (validFromRaw as Timestamp).toDate === "function"
-          ) {
-            validFrom = (validFromRaw as Timestamp).toDate();
-          }
-
-          if (typeof validToRaw === "number") {
-            validTo = new Date(validToRaw);
-          } else if (
-            validToRaw &&
-            typeof (validToRaw as Timestamp).toDate === "function"
-          ) {
-            validTo = (validToRaw as Timestamp).toDate();
-          }
+          const validFromTs = data.validFrom as Timestamp | undefined;
+          const validToTs = data.validTo as Timestamp | undefined;
 
           return {
             id: docSnap.id,
@@ -640,30 +584,14 @@ useEffect(() => {
             imageUrl: data.imageUrl as string | undefined,
             isActive: (data.isActive as boolean | undefined) ?? false,
             locationId: data.locationId as string | undefined,
-            priorityWeight:
-              typeof data.priorityWeight === "number"
-                ? (data.priorityWeight as number)
-                : undefined,
-            qrPayload: data.qrPayload as string | undefined,
-            redemptionCode: data.redemptionCode as string | undefined,
-            redemptionType: data.redemptionType as string | undefined,
-            termsAndConditions:
-              (data.termsAndConditions as string | undefined) ?? undefined,
-            validFrom,
-            validTo,
+            validFrom: validFromTs ? validFromTs.toDate() : undefined,
+            validTo: validToTs ? validToTs.toDate() : undefined,
+            priority:
+              typeof data.priority === "number" ? data.priority : undefined,
           };
         });
 
-        items.sort((a, b) => {
-          const pa = a.priorityWeight ?? 0;
-          const pb = b.priorityWeight ?? 0;
-          if (pb !== pa) return pb - pa;
-          const da = a.validFrom?.getTime() ?? 0;
-          const db = b.validFrom?.getTime() ?? 0;
-          return db - da;
-        });
-
-        setPromotions(items);
+        setPromotions(promoItems);
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Failed to load promotions";
@@ -677,405 +605,230 @@ useEffect(() => {
   }, [id]);
 
   // ---------- Fetch CAMPAIGNS ----------
-useEffect(() => {
-  const fetchCampaigns = async () => {
-    if (!id) {
-      setCampaignsLoading(false);
-      return;
-    }
+  useEffect(() => {
+    const fetchCampaigns = async () => {
+      if (!id) {
+        setCampaignsLoading(false);
+        return;
+      }
 
-    try {
-      setCampaignsLoading(true);
-      setCampaignsError(null);
+      try {
+        const brandsRef = collection(db, "brands");
+        const brandsSnapshot = await getDocs(brandsRef);
 
-      // campaigns are stored under engage/{brandId}/campaigns
-      // but we use a collectionGroup query so we don't care which brand
-      const cgRef = collectionGroup(db, "campaigns");
-      const qCampaigns = query(
-        cgRef,
-        where("locationIds", "array-contains", id)
-      );
+        const allCampaigns: LocationCampaign[] = [];
 
-      const snapshot = await getDocs(qCampaigns);
+        for (const brandDoc of brandsSnapshot.docs) {
+          const brandId = brandDoc.id;
+          const campaignsRef = collection(db, "brands", brandId, "campaigns");
+          const campaignsSnapshot = await getDocs(campaignsRef);
 
-      const items: LocationCampaign[] = snapshot.docs.map((docSnap) => {
-        const data = docSnap.data() as DocumentData;
-        const createdTs = data.createdAt as Timestamp | undefined;
+          for (const campaignDoc of campaignsSnapshot.docs) {
+            const campaignData = campaignDoc.data() as DocumentData;
 
-        // parent of campaigns collection is the brand document
-        const brandRef = docSnap.ref.parent.parent;
-        const brandId = brandRef?.id;
+            const locationIds = Array.isArray(campaignData.locationIds)
+              ? (campaignData.locationIds as string[])
+              : [];
 
-        return {
-          id: docSnap.id,
-          brandId,
-          name: (data.name as string | undefined) ?? "Untitled campaign",
-          active: (data.active as boolean | undefined) ?? false,
-          engagements: (data.engagements as number | undefined) ?? 0,
-          url: data.url as string | undefined,
-          targetUrl: data.targetUrl as string | undefined,
-          createdAt: createdTs ? createdTs.toDate() : undefined,
-        };
-      });
+            if (locationIds.includes(id)) {
+              const createdAtTs = campaignData.createdAt as Timestamp | undefined;
 
-      // newest first
-      items.sort((a, b) => {
-        const ta = a.createdAt?.getTime() ?? 0;
-        const tb = b.createdAt?.getTime() ?? 0;
-        return tb - ta;
-      });
+              allCampaigns.push({
+                id: campaignDoc.id,
+                brandId,
+                name: (campaignData.name as string) ?? "Untitled campaign",
+                active: (campaignData.active as boolean | undefined) ?? false,
+                engagements:
+                  typeof campaignData.engagements === "number"
+                    ? campaignData.engagements
+                    : 0,
+                url: campaignData.url as string | undefined,
+                targetUrl: campaignData.targetUrl as string | undefined,
+                createdAt: createdAtTs ? createdAtTs.toDate() : undefined,
+              });
+            }
+          }
+        }
 
-      setCampaigns(items);
-    } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Failed to load campaigns";
-      setCampaignsError(msg);
-    } finally {
-      setCampaignsLoading(false);
-    }
-  };
-
-  void fetchCampaigns();
-}, [id]);
-
-  // ---------- LOCATION EDIT ----------
-  const openEditDialog = () => {
-    if (!location) return;
-
-    const oh = location.openHours ?? {};
-
-    const form: EditFormState = {
-      name: location.name,
-      address: location.address ?? "",
-      city: location.city ?? "",
-      country: location.country ?? "",
-      category: location.category ?? "",
-
-      brand: location.brand ?? "",
-      storeLocation: location.storeLocation ?? "",
-     qrCode: location.qrCode || deriveQrCodeFromId(location.id),
-
-      priority: location.priority != null ? String(location.priority) : "",
-      lat: location.lat != null ? String(location.lat) : "",
-      lng: location.lng != null ? String(location.lng) : "",
-      active: location.active,
-      supportsOrdering: location.supportsOrdering,
-      supportsPayments: location.supportsPayments,
-      supportsPromotions: location.supportsPromotions,
-
-      openHoursMon: oh.mon ?? "",
-      openHoursTue: oh.tue ?? "",
-      openHoursWed: oh.wed ?? "",
-      openHoursThu: oh.thu ?? "",
-      openHoursFri: oh.fri ?? "",
-      openHoursSat: oh.sat ?? "",
-      openHoursSun: oh.sun ?? "",
-    };
-
-    setEditForm(form);
-    setSaveError(null);
-    setIsEditOpen(true);
-  };
-
-  const closeEditDialog = () => {
-    if (saving) return;
-    setIsEditOpen(false);
-  };
-
-  const handleEditChange =
-    (field: keyof EditFormState) =>
-    (event: ChangeEvent<HTMLInputElement>) => {
-      if (!editForm) return;
-
-      if (
-        field === "active" ||
-        field === "supportsOrdering" ||
-        field === "supportsPayments" ||
-        field === "supportsPromotions"
-      ) {
-        setEditForm({
-          ...editForm,
-          [field]: event.target.checked,
-        });
-      } else {
-        setEditForm({
-          ...editForm,
-          [field]: event.target.value,
-        });
+        setCampaigns(allCampaigns);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to load campaigns";
+        setCampaignsError(message);
+      } finally {
+        setCampaignsLoading(false);
       }
     };
 
-  const handleEditSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!location || !editForm) return;
+    void fetchCampaigns();
+  }, [id]);
 
-    setSaving(true);
-    setSaveError(null);
+  // ---------- LOCATION EDIT HANDLERS ----------
+  const handleLocationSubmit = async (form: EditFormState) => {
+    if (!location) return;
 
-    try {
-      const ref = doc(db, "locations", location.id);
+    const ref = doc(db, "locations", location.id);
 
-      const priorityNumber =
-        editForm.priority.trim().length > 0
-          ? Number(editForm.priority.trim())
-          : null;
+    const priorityNumber =
+      form.priority.trim().length > 0 ? Number(form.priority.trim()) : null;
 
-      const latNumber =
-        editForm.lat.trim().length > 0 ? Number(editForm.lat.trim()) : null;
-      const lngNumber =
-        editForm.lng.trim().length > 0 ? Number(editForm.lng.trim()) : null;
+    const latNumber =
+      form.lat.trim().length > 0 ? Number(form.lat.trim()) : null;
+    const lngNumber =
+      form.lng.trim().length > 0 ? Number(form.lng.trim()) : null;
 
-        let qrCode = editForm.qrCode.trim();
+    let qrCode = form.qrCode.trim();
     if (!qrCode) {
       qrCode = deriveQrCodeFromId(location.id);
     }
 
-      const updates: Record<string, unknown> = {
-        name: editForm.name.trim(),
-        address: editForm.address.trim(),
-        city: editForm.city.trim(),
-        country: editForm.country.trim(),
-        category: editForm.category.trim(),
-        brand: editForm.brand.trim(),
-        storeLocation: editForm.storeLocation.trim(),
-        qrCode,
-        active: editForm.active,
-        supportsOrdering: editForm.supportsOrdering,
-        supportsPayments: editForm.supportsPayments,
-        supportsPromotions: editForm.supportsPromotions,
-      };
-
-      if (priorityNumber !== null && !Number.isNaN(priorityNumber)) {
-        updates.priority = priorityNumber;
-      } else {
-        updates.priority = null;
-      }
-
-      updates.lat =
-        latNumber !== null && !Number.isNaN(latNumber) ? latNumber : null;
-      updates.lng =
-        lngNumber !== null && !Number.isNaN(lngNumber) ? lngNumber : null;
-
-      const openHoursUpdates: OpenHours = {
-        mon: editForm.openHoursMon.trim(),
-        tue: editForm.openHoursTue.trim(),
-        wed: editForm.openHoursWed.trim(),
-        thu: editForm.openHoursThu.trim(),
-        fri: editForm.openHoursFri.trim(),
-        sat: editForm.openHoursSat.trim(),
-        sun: editForm.openHoursSun.trim(),
-      };
-
-      updates.openHours = openHoursUpdates;
-
-      await updateDoc(ref, updates);
-
-      const newLocation: Location = {
-        ...location,
-        name: updates.name as string,
-        address: updates.address as string,
-        city: updates.city as string,
-        country: updates.country as string,
-        category: updates.category as string,
-        brand: updates.brand as string,
-        storeLocation: updates.storeLocation as string,
-        qrCode: updates.qrCode as string,
-        active: updates.active as boolean,
-        supportsOrdering: updates.supportsOrdering as boolean,
-        supportsPayments: updates.supportsPayments as boolean,
-        supportsPromotions: updates.supportsPromotions as boolean,
-        priority:
-          priorityNumber !== null && !Number.isNaN(priorityNumber)
-            ? priorityNumber
-            : undefined,
-        lat:
-          latNumber !== null && !Number.isNaN(latNumber)
-            ? latNumber
-            : undefined,
-        lng:
-          lngNumber !== null && !Number.isNaN(lngNumber)
-            ? lngNumber
-            : undefined,
-        openHours: openHoursUpdates,
-      };
-
-      setLocation(newLocation);
-      setIsEditOpen(false);
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to save changes";
-      setSaveError(message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // ---------- UNIT ADD / EDIT ----------
-  const openAddUnitDialog = () => {
-    if (!location) return;
-
-    const form: UnitEditForm = {
-      name: "",
-      position: "",
-      status: "online",
-      inUse: false,
-      totalSessions: "0",
+    const updates: Record<string, unknown> = {
+      name: form.name.trim(),
+      address: form.address.trim(),
+      city: form.city.trim(),
+      country: form.country.trim(),
+      category: form.category.trim(),
+      brand: form.brand.trim(),
+      storeLocation: form.storeLocation.trim(),
+      qrCode,
+      active: form.active,
+      supportsOrdering: form.supportsOrdering,
+      supportsPayments: form.supportsPayments,
+      supportsPromotions: form.supportsPromotions,
     };
 
+    if (priorityNumber !== null && !Number.isNaN(priorityNumber)) {
+      updates.priority = priorityNumber;
+    } else {
+      updates.priority = null;
+    }
+
+    updates.lat =
+      latNumber !== null && !Number.isNaN(latNumber) ? latNumber : null;
+    updates.lng =
+      lngNumber !== null && !Number.isNaN(lngNumber) ? lngNumber : null;
+
+    const openHoursUpdates: OpenHours = {
+      mon: form.openHoursMon.trim(),
+      tue: form.openHoursTue.trim(),
+      wed: form.openHoursWed.trim(),
+      thu: form.openHoursThu.trim(),
+      fri: form.openHoursFri.trim(),
+      sat: form.openHoursSat.trim(),
+      sun: form.openHoursSun.trim(),
+    };
+
+    updates.openHours = openHoursUpdates;
+
+    await updateDoc(ref, updates);
+
+    const newLocation: Location = {
+      ...location,
+      name: updates.name as string,
+      address: updates.address as string,
+      city: updates.city as string,
+      country: updates.country as string,
+      category: updates.category as string,
+      brand: updates.brand as string,
+      storeLocation: updates.storeLocation as string,
+      qrCode: updates.qrCode as string,
+      active: updates.active as boolean,
+      supportsOrdering: updates.supportsOrdering as boolean,
+      supportsPayments: updates.supportsPayments as boolean,
+      supportsPromotions: updates.supportsPromotions as boolean,
+      priority:
+        priorityNumber !== null && !Number.isNaN(priorityNumber)
+          ? priorityNumber
+          : undefined,
+      lat:
+        latNumber !== null && !Number.isNaN(latNumber) ? latNumber : undefined,
+      lng:
+        lngNumber !== null && !Number.isNaN(lngNumber) ? lngNumber : undefined,
+      openHours: openHoursUpdates,
+    };
+
+    setLocation(newLocation);
+    setIsEditOpen(false);
+  };
+
+  // ---------- UNIT ADD / EDIT HANDLERS ----------
+  const openAddUnitDialog = () => {
     setUnitDialogMode("add");
-    setUnitForm(form);
-    setUnitSaveError(null);
+    setSelectedUnit(undefined);
     setIsUnitDialogOpen(true);
   };
 
   const openEditUnitDialog = (unit: Unit) => {
-    const form: UnitEditForm = {
-      id: unit.id,
-      name: unit.name,
-      position: unit.position ?? "",
-      status: unit.status ?? "",
-      inUse: !!unit.inUse,
-      totalSessions: String(unit.totalSessions ?? 0),
-    };
-
     setUnitDialogMode("edit");
-    setUnitForm(form);
-    setUnitSaveError(null);
+    setSelectedUnit(unit);
     setIsUnitDialogOpen(true);
   };
 
-  const closeUnitDialog = () => {
-    if (unitSaving) return;
+  const handleUnitSubmit = async (form: UnitEditForm) => {
+    if (!location) return;
+
+    const totalSessionsNumber =
+      form.totalSessions.trim().length > 0
+        ? Number(form.totalSessions.trim())
+        : 0;
+
+    const baseData: Record<string, unknown> = {
+      name: form.name.trim(),
+      position: form.position.trim(),
+      status: form.status.trim() || "online",
+      inUse: form.inUse,
+      totalSessions: Number.isNaN(totalSessionsNumber)
+        ? 0
+        : totalSessionsNumber,
+    };
+
+    if (unitDialogMode === "edit" && form.id) {
+      const ref = doc(db, "units", form.id);
+      await updateDoc(ref, baseData);
+
+      setUnits((prev) =>
+        prev.map((u) =>
+          u.id === form.id
+            ? {
+                ...u,
+                name: baseData.name as string,
+                position: baseData.position as string,
+                status: baseData.status as string,
+                inUse: baseData.inUse as boolean,
+                totalSessions: baseData.totalSessions as number,
+              }
+            : u
+        )
+      );
+    } else {
+      const ref = await addDoc(collection(db, "units"), {
+        ...baseData,
+        locationId: location.id,
+        lastHeartbeat: serverTimestamp(),
+      });
+
+      const newUnit: Unit = {
+        id: ref.id,
+        name: baseData.name as string,
+        position: baseData.position as string,
+        status: baseData.status as string,
+        inUse: baseData.inUse as boolean,
+        totalSessions: baseData.totalSessions as number,
+      };
+
+      setUnits((prev) => [...prev, newUnit]);
+    }
+
     setIsUnitDialogOpen(false);
   };
 
-  const handleUnitChange =
-    (field: keyof UnitEditForm) =>
-    (event: ChangeEvent<HTMLInputElement>) => {
-      if (!unitForm) return;
-
-      if (field === "inUse") {
-        setUnitForm({
-          ...unitForm,
-          inUse: event.target.checked,
-        });
-      } else {
-        setUnitForm({
-          ...unitForm,
-          [field]: event.target.value,
-        });
-      }
-    };
-
-  const handleUnitSubmit = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    if (!location || !unitForm) return;
-
-    setUnitSaving(true);
-    setUnitSaveError(null);
-
-    try {
-      const totalSessionsNumber =
-        unitForm.totalSessions.trim().length > 0
-          ? Number(unitForm.totalSessions.trim())
-          : 0;
-
-      const baseData: Record<string, unknown> = {
-        name: unitForm.name.trim(),
-        position: unitForm.position.trim(),
-        status: unitForm.status.trim() || "online",
-        inUse: unitForm.inUse,
-        totalSessions: Number.isNaN(totalSessionsNumber)
-          ? 0
-          : totalSessionsNumber,
-      };
-
-      if (unitDialogMode === "edit" && unitForm.id) {
-        const ref = doc(db, "units", unitForm.id);
-        await updateDoc(ref, baseData);
-
-        setUnits((prev) =>
-          prev.map((u) =>
-            u.id === unitForm.id
-              ? {
-                  ...u,
-                  name: baseData.name as string,
-                  position: baseData.position as string,
-                  status: baseData.status as string,
-                  inUse: baseData.inUse as boolean,
-                  totalSessions: baseData.totalSessions as number,
-                }
-              : u
-          )
-        );
-      } else {
-        const ref = await addDoc(collection(db, "units"), {
-          ...baseData,
-          locationId: location.id,
-          lastHeartbeat: serverTimestamp(),
-        });
-
-        const newUnit: Unit = {
-          id: ref.id,
-          name: baseData.name as string,
-          position: baseData.position as string,
-          status: baseData.status as string,
-          inUse: baseData.inUse as boolean,
-          totalSessions: baseData.totalSessions as number,
-        };
-
-        setUnits((prev) => [...prev, newUnit]);
-      }
-
-      setIsUnitDialogOpen(false);
-    } catch (err) {
-      const message =
-        err instanceof Error ? err.message : "Failed to save unit";
-      setUnitSaveError(message);
-    } finally {
-      setUnitSaving(false);
-    }
+  // ---------- SESSION HANDLERS ----------
+  const handleSessionClick = (session: Session) => {
+    setSelectedSession(session);
+    setSessionDetailOpen(true);
   };
 
-  // ---------- GROUP & SORT UNITS BY POSITION ----------
-  const groupedUnits = (() => {
-    if (!units || units.length === 0) return [];
-
-    const byPosition: Record<string, Unit[]> = {};
-
-    units.forEach((u) => {
-      const key =
-        u.position && u.position.trim().length > 0
-          ? u.position.trim()
-          : "Unassigned position";
-
-      if (!byPosition[key]) {
-        byPosition[key] = [];
-      }
-      byPosition[key].push(u);
-    });
-
-    const positions = Object.keys(byPosition).sort((a, b) =>
-      a.localeCompare(b)
-    );
-
-    return positions.map((position) => ({
-      position,
-      units: byPosition[position]
-        .slice()
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    }));
-  })();
-
   // ---------- SESSION FILTERING ----------
-  const unitNameOptions: string[] = Array.from(
-    new Set(
-      sessions
-        .map((s) => s.unitName ?? s.unitId)
-        .filter((name): name is string => !!name)
-    )
-  ).sort((a, b) => a.localeCompare(b));
-
   const filteredSessions: Session[] = (() => {
     if (!sessions || sessions.length === 0) return [];
 
@@ -1089,10 +842,19 @@ useEffect(() => {
       0,
       0
     );
-    const sevenDaysAgo = new Date(
+    const startOfWeek = new Date(
       now.getFullYear(),
       now.getMonth(),
       now.getDate() - 7,
+      0,
+      0,
+      0,
+      0
+    );
+    const startOfMonth = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      1,
       0,
       0,
       0,
@@ -1103,8 +865,8 @@ useEffect(() => {
       if (sessionsInProgressOnly && !s.inProgress) return false;
 
       if (sessionsUnitFilter !== "all") {
-        const nameOrId = s.unitName ?? s.unitId ?? "";
-        if (nameOrId !== sessionsUnitFilter) return false;
+        const unitId = units.find((u) => u.name === sessionsUnitFilter)?.id;
+        if (s.unitId !== unitId) return false;
       }
 
       if (sessionsDateFilter === "today") {
@@ -1112,86 +874,38 @@ useEffect(() => {
         return s.startedAt >= startOfToday;
       }
 
-      if (sessionsDateFilter === "last7") {
+      if (sessionsDateFilter === "week") {
         if (!s.startedAt) return false;
-        return s.startedAt >= sevenDaysAgo;
+        return s.startedAt >= startOfWeek;
+      }
+
+      if (sessionsDateFilter === "month") {
+        if (!s.startedAt) return false;
+        return s.startedAt >= startOfMonth;
       }
 
       return true;
     });
   })();
 
-  const openSessionDetail = (session: Session) => {
-    setSelectedSession(session);
-    setSessionDetailOpen(true);
-  };
-
-  const closeSessionDetail = () => {
-    setSessionDetailOpen(false);
-  };
-
-  // ---------- ACTIVE PROMOTIONS ----------
-  const now = new Date();
-  const activePromotions: Promotion[] = promotions.filter((p) => {
-    if (!p.isActive) return false;
-    if (p.validFrom && p.validFrom > now) return false;
-    if (p.validTo && p.validTo < now) return false;
-    return true;
-  });
-
-  // ---------- IMAGES ----------
-  const handleOpenImagesDialog = () => {
+  // ---------- IMAGES HANDLERS ----------
+  const handleImagesSubmit = async (images: string[]) => {
     if (!location) return;
-    setImagesText((location.images ?? []).join("\n"));
-    setImagesError(null);
-    setImagesDialogOpen(true);
-  };
 
-  const handleCloseImagesDialog = () => {
-    if (savingImages) return;
+    const ref = doc(db, "locations", location.id);
+    await updateDoc(ref, { images });
+
+    setLocation({ ...location, images });
     setImagesDialogOpen(false);
-  };
-
-  const handleSaveImages = async () => {
-    if (!location) return;
-    setSavingImages(true);
-    setImagesError(null);
-
-    try {
-      const urls = imagesText
-        .split("\n")
-        .map((line) => line.trim())
-        .filter((line) => line.length > 0);
-
-      const ref = doc(db, "locations", location.id);
-      await updateDoc(ref, { images: urls });
-
-      setLocation((prev) =>
-        prev
-          ? {
-              ...prev,
-              images: urls,
-            }
-          : prev
-      );
-
-      setImagesDialogOpen(false);
-    } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Failed to save images";
-      setImagesError(msg);
-    } finally {
-      setSavingImages(false);
-    }
   };
 
   // ---------- RENDER ----------
   if (loading) {
     return (
       <MainLayout>
-        <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
-          <CircularProgress />
-        </Box>
+        <div className="flex justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
       </MainLayout>
     );
   }
@@ -1199,1602 +913,154 @@ useEffect(() => {
   if (error || !location) {
     return (
       <MainLayout>
-        <Typography variant="h4" gutterBottom>
-          Location
-        </Typography>
-        <Typography color="error">{error ?? "Location not found"}</Typography>
+        <div className="space-y-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate(-1)}
+            className="gap-2"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Back
+          </Button>
+          <p className="text-destructive">{error || "Location not found"}</p>
+        </div>
       </MainLayout>
     );
   }
 
-  const hasPromo =
-    location.hasActivePromotion || location.hasActivePromotions;
-  const unitsHeaderColSpan = canEdit ? 8 : 7;
-
   const brandSlug = location.brand ? slugify(location.brand) : "";
-const storeSlug = location.storeLocation
-  ? slugify(location.storeLocation)
-  : "";
-
-  const qrImageUrl = location.qrCode
-  ? `https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(
-      location.qrCode
-    )}`
-  : undefined;
-
-  const qrUrl =
-  location.qrCode && location.qrCode.length > 0
-    ? location.qrCode
-    : `https://opencharge.io/e/${brandSlug}/${storeSlug}`;
+  const storeSlug = location.storeLocation
+    ? slugify(location.storeLocation)
+    : "";
 
   return (
-    <MainLayout>
-      <Button
-      startIcon={<ArrowBackIcon />}
-      size="small"
-      sx={{ mb: 2 }}
-      onClick={() => navigate("/locations")}
-    >
-      Back to locations
-    </Button>
-      {/* Header */}
-      <Box sx={{ mb: 3, display: "flex", gap: 2, alignItems: "center" }}>
-       
-        {/* Title + address */}
-        <Box sx={{ flexGrow: 1 }}>
-          <Typography variant="h4" gutterBottom>
-            {location.name}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {location.address}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {location.city} {location.country && `• ${location.country}`}
-          </Typography>
-        </Box>
-
-        {/* Status + actions */}
-        <Stack direction="column" spacing={1} alignItems="flex-end">
-          <Chip
-            label={location.active ? "Active" : "Inactive"}
-            color={location.active ? "success" : "default"}
-            size="small"
-          />
-          {hasPromo && (
-            <Chip label="Promotion active" color="primary" size="small" />
-          )}
-          {campaigns.length > 0 && (
-              <Chip
-                label={`${campaigns.length} campaign${campaigns.length > 1 ? "s" : ""}`}
-                color="secondary"
-                size="small"
-              />
-            )}
-          {canEdit && (
-            <Button variant="outlined" size="small" onClick={openEditDialog}>
-              Edit location
+    <>
+      <PageHeader
+        title="Location"
+        breadcrumbs={[{ label: "Locations", href: "/locations" }]}
+      />
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate(-1)}
+              className="gap-2"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
             </Button>
-          )}
-        </Stack>
-      </Box>
+            <h1 className="text-3xl font-bold tracking-tight">
+              {location.name}
+            </h1>
+            <Badge variant={location.active ? "default" : "secondary"}>
+              {location.active ? "Active" : "Inactive"}
+            </Badge>
+          </div>
 
-      {/* Top hero image */}
-      {location.images[0] && (
-        <Box sx={{ mb: 3 }}>
-          <Box
-            component="img"
-            src={location.images[0]}
-            alt={location.name}
-            sx={{
-              width: "100%",
-              maxHeight: 320,
-              objectFit: "cover",
-              borderRadius: 2,
-            }}
-          />
-        </Box>
-      )}
-
-      {/* Images / media card */}
-      <Card sx={{ mt: 2 }}>
-        <CardContent>
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              mb: 1,
-            }}
-          >
-            <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>
-              Images
-            </Typography>
-            {canEdit && (
+          {canEdit && (
+            <div className="flex gap-2">
               <Button
-                size="small"
-                variant="outlined"
-                onClick={handleOpenImagesDialog}
+                variant="outline"
+                onClick={() => setImagesDialogOpen(true)}
               >
                 Edit images
               </Button>
-            )}
-          </Box>
-
-          {location.images && location.images.length > 0 ? (
-            <Box
-              sx={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(120px, 1fr))",
-                gap: 1.5,
-              }}
-            >
-              {location.images.map((url, idx) => (
-                <Box
-                  key={`${url}-${idx}`}
-                  sx={{
-                    borderRadius: 2,
-                    overflow: "hidden",
-                    border: "1px solid",
-                    borderColor: "divider",
-                  }}
-                >
-                  <img
-                    src={url}
-                    alt={`Location image ${idx + 1}`}
-                    style={{
-                      width: "100%",
-                      height: 100,
-                      objectFit: "cover",
-                      display: "block",
-                    }}
-                  />
-                </Box>
-              ))}
-            </Box>
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              No images configured for this location yet.
-            </Typography>
-          )}
-        </CardContent>
-      </Card>
-
-
-
-      {/* GRID LAYOUT */}
-      <Grid container spacing={2} sx={{ mt: 2 }}>
-        {/* Left column */}
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Location info
-              </Typography>
-
-              <List dense>
-                  <ListItem>
-                    <ListItemText
-                      primary="Brand"
-                      secondary={location.brand || "-"}
-                    />
-                  </ListItem>
-                  <Divider component="li" />
-
-                  <ListItem>
-                    <ListItemText
-                      primary="Store location"
-                      secondary={location.storeLocation || "-"}
-                    />
-                  </ListItem>
-                  <Divider component="li" />
-                <ListItem>
-                  <ListItemText
-                    primary="Category"
-                    secondary={location.category ?? "-"}
-                  />
-                </ListItem>
-                <Divider component="li" />
-
-                <ListItem>
-                  <ListItemText
-                    primary="Address"
-                    secondary={location.address ?? "-"}
-                  />
-                </ListItem>
-                <Divider component="li" />
-
-                <ListItem>
-                  <ListItemText
-                    primary="City"
-                    secondary={location.city ?? "-"}
-                  />
-                </ListItem>
-                <Divider component="li" />
-
-                <ListItem>
-                  <ListItemText
-                    primary="Country"
-                    secondary={location.country ?? "-"}
-                  />
-                </ListItem>
-
-                <Divider component="li" />
-                  <ListItem>
-                    <ListItemText
-                      primary="QR code link"
-                      secondary={location.qrCode || "-"}
-                    />
-                  </ListItem>
-                <Divider component="li" />
-
-                <ListItem>
-                  <ListItemText
-                    primary="Coordinates"
-                    secondary={
-                      location.lat != null && location.lng != null
-                        ? `${location.lat.toFixed(6)}, ${location.lng.toFixed(
-                            6
-                          )}`
-                        : "-"
-                    }
-                  />
-                </ListItem>
-
-                <Divider component="li" />
-                <ListItem>
-                  <ListItemText
-                    primary="Priority"
-                    secondary={
-                      location.priority != null ? location.priority : "-"
-                    }
-                  />
-                </ListItem>
-              </List>
-
-              <Divider sx={{ my: 2 }} />
-
-              <Typography variant="subtitle1" gutterBottom>
-                Capabilities
-              </Typography>
-              <Stack direction="row" spacing={1} flexWrap="wrap">
-                <Chip
-                  label="Ordering"
-                  color={location.supportsOrdering ? "success" : "default"}
-                  variant={location.supportsOrdering ? "filled" : "outlined"}
-                  size="small"
-                />
-                <Chip
-                  label="Payments"
-                  color={location.supportsPayments ? "success" : "default"}
-                  variant={location.supportsPayments ? "filled" : "outlined"}
-                  size="small"
-                />
-                <Chip
-                  label="Promotions"
-                  color={location.supportsPromotions ? "success" : "default"}
-                  variant={location.supportsPromotions ? "filled" : "outlined"}
-                  size="small"
-                />
-              </Stack>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* Right column */}
-        <Grid item xs={12} md={6}>
-           {/* QR code */}
-  <Card sx={{ mb: 2 }}>
-    <CardContent>
-      <Typography variant="h6" gutterBottom>
-        Engagement QR code
-      </Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        This is the link encoded on the printed QR for this store. It routes to
-        the active Engage campaign for this location.
-      </Typography>
-
-      <Stack direction="row" spacing={3} alignItems="center">
-        <Box
-          sx={{
-            p: 1.5,
-            borderRadius: 2,
-            border: "1px solid",
-            borderColor: "divider",
-            bgcolor: "background.paper",
-          }}
-        >
-          <QRCodeSVG value={qrUrl} size={132} />
-        </Box>
-
-        <Box sx={{ flexGrow: 1 }}>
-          <Typography
-            variant="body2"
-            sx={{ wordBreak: "break-all" }}
-          >
-            {qrUrl}
-          </Typography>
-          <Button
-            startIcon={<ContentCopyIcon />}
-            size="small"
-            sx={{ mt: 1 }}
-            onClick={() => navigator.clipboard.writeText(qrUrl)}
-          >
-            Copy URL
-          </Button>
-        </Box>
-      </Stack>
-    </CardContent>
-  </Card>
-          {/* Usage */}
-          <Card sx={{ mb: 2 }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Usage & units
-              </Typography>
-
-              <List dense>
-                <ListItem>
-                  <ListItemText
-                    primary="Units in use / total"
-                    secondary={`${location.unitInUse} / ${location.unitTotal}`}
-                  />
-                </ListItem>
-                <Divider component="li" />
-
-                <ListItem>
-                  <ListItemText
-                    primary="Total sessions"
-                    secondary={location.totalSessions}
-                  />
-                </ListItem>
-                <Divider component="li" />
-
-                <ListItem>
-                  <ListItemText
-                    primary="Last availability update"
-                    secondary={formatDateTime(
-                      location.lastAvailabilityUpdate
-                    )}
-                  />
-                </ListItem>
-              </List>
-            </CardContent>
-          </Card>
-
-          {/* Opening hours */}
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Opening hours
-              </Typography>
-
-              {location.openHours ? (
-                <List dense>
-                  {ORDERED_DAYS.map((day) => (
-                    <ListItem key={day} sx={{ py: 0.3 }}>
-                      <ListItemText
-                        primary={day.toUpperCase()}
-                        secondary={location.openHours?.[day] ?? "Closed"}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-              ) : (
-                <Typography variant="body2" color="text.secondary">
-                  No opening hours configured.
-                </Typography>
-              )}
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      {/* Active promotions */}
-      <Box sx={{ mt: 4 }}>
-        <Card>
-          <CardContent>
-            <Box
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                mb: 1,
-              }}
-            >
-              <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>
-                Active promotions
-              </Typography>
-              <Button
-                size="small"
-                variant="text"
-                onClick={() =>
-                  navigate(
-                    `/promotions?locationId=${encodeURIComponent(location.id)}`
-                  )
-                }
-              >
-                Manage in Promotions
+              <Button onClick={() => setIsEditOpen(true)}>
+                Edit location
               </Button>
-            </Box>
-
-            {promotionsLoading && (
-              <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
-                <CircularProgress size={24} />
-              </Box>
-            )}
-
-            {promotionsError && (
-              <Typography color="error" variant="body2" sx={{ mt: 1 }}>
-                {promotionsError}
-              </Typography>
-            )}
-
-            {!promotionsLoading &&
-              !promotionsError &&
-              activePromotions.length === 0 && (
-                <Typography variant="body2" color="text.secondary">
-                  No active promotions for this location.
-                </Typography>
-              )}
-
-            {!promotionsLoading &&
-              !promotionsError &&
-              activePromotions.length > 0 && (
-                <Stack spacing={2} sx={{ mt: 1 }}>
-                  {activePromotions.map((promo) => (
-                    <Box
-                      key={promo.id}
-                      sx={{
-                        borderRadius: 1,
-                        border: "1px solid",
-                        borderColor: "divider",
-                        p: 1.5,
-                        display: "flex",
-                        gap: 2,
-                      }}
-                    >
-                      {promo.imageUrl && (
-                        <Box
-                          component="img"
-                          src={promo.imageUrl}
-                          alt={promo.title}
-                          sx={{
-                            width: 80,
-                            height: 80,
-                            objectFit: "cover",
-                            borderRadius: 1,
-                            flexShrink: 0,
-                          }}
-                        />
-                      )}
-                      <Box sx={{ flexGrow: 1 }}>
-                        <Stack
-                          direction="row"
-                          alignItems="center"
-                          justifyContent="space-between"
-                          spacing={1}
-                        >
-                          <Typography variant="subtitle1">
-                            {promo.title}
-                          </Typography>
-                          <Chip label="Active" color="success" size="small" />
-                        </Stack>
-                        {promo.description && (
-                          <Typography
-                            variant="body2"
-                            color="text.secondary"
-                            sx={{ mt: 0.5 }}
-                          >
-                            {promo.description}
-                          </Typography>
-                        )}
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          sx={{ display: "block", mt: 0.5 }}
-                        >
-                          {formatDateRange(promo.validFrom, promo.validTo)}
-                        </Typography>
-                      </Box>
-                    </Box>
-                  ))}
-                </Stack>
-              )}
-          </CardContent>
-        </Card>
-      </Box>
-
-      {/* Engage campaigns */}
-<Box sx={{ mt: 4 }}>
-  <Card>
-    <CardContent>
-      <Box
-        sx={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          mb: 1,
-        }}
-      >
-        <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>
-          Engage campaigns at this store
-        </Typography>
-
-        {/* Placeholder – later this can go to a global campaign analytics page */}
-        <Button
-          size="small"
-          variant="text"
-          onClick={() =>
-            navigate(
-              `/engage/campaigns?brand=${encodeURIComponent(
-                brandSlug
-              )}&store=${encodeURIComponent(storeSlug)}`
-            )
-          }
-        >
-          View in Engage
-        </Button>
-      </Box>
-
-      {engageLoading && (
-        <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
-          <CircularProgress size={24} />
-        </Box>
-      )}
-
-      {engageError && (
-        <Typography color="error" variant="body2" sx={{ mt: 1 }}>
-          {engageError}
-        </Typography>
-      )}
-
-      {!engageLoading &&
-        !engageError &&
-        engageCampaigns.length === 0 && (
-          <Typography variant="body2" color="text.secondary">
-            No Engage campaigns configured for this store yet.
-          </Typography>
-        )}
-
-      {!engageLoading &&
-        !engageError &&
-        engageCampaigns.length > 0 && (
-          <Table size="small" sx={{ mt: 1 }}>
-            <TableHead>
-              <TableRow>
-                <TableCell>Campaign</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell align="right">Engagements</TableCell>
-                <TableCell>Target</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {engageCampaigns.map((c) => (
-                <TableRow key={c.id} hover>
-                  <TableCell>{c.name}</TableCell>
-                  <TableCell>
-                    <Chip
-                      label={c.active ? "Active" : "Inactive"}
-                      size="small"
-                      color={c.active ? "success" : "default"}
-                    />
-                  </TableCell>
-                  <TableCell align="right">{c.engagements}</TableCell>
-                  <TableCell>
-                    {c.targetUrl ? (
-                      <Typography
-                        variant="caption"
-                        color="text.secondary"
-                        sx={{ wordBreak: "break-all" }}
-                      >
-                        {c.targetUrl}
-                      </Typography>
-                    ) : (
-                      "—"
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-    </CardContent>
-  </Card>
-</Box>
-
-      {/* Campaigns at this location */}
-      <Box sx={{ mt: 4 }}>
-        <Card>
-          <CardContent>
-            <Box
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                mb: 1,
-              }}
-            >
-              <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>
-                Campaigns at this location
-              </Typography>
-              <Button
-                size="small"
-                variant="text"
-                onClick={() => navigate("/campaigns")}
-              >
-                Manage in Campaigns
-              </Button>
-            </Box>
-
-            {campaignsLoading && (
-              <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
-                <CircularProgress size={24} />
-              </Box>
-            )}
-
-            {campaignsError && (
-              <Typography color="error" variant="body2" sx={{ mt: 1 }}>
-                {campaignsError}
-              </Typography>
-            )}
-
-            {!campaignsLoading && !campaignsError && campaigns.length === 0 && (
-              <Typography variant="body2" color="text.secondary">
-                No campaigns currently targeting this location.
-              </Typography>
-            )}
-
-            {!campaignsLoading && !campaignsError && campaigns.length > 0 && (
-              <Stack spacing={2} sx={{ mt: 1 }}>
-                {campaigns.map((c) => (
-                  <Box
-                    key={c.id}
-                    sx={{
-                      borderRadius: 1,
-                      border: "1px solid",
-                      borderColor: "divider",
-                      p: 1.5,
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 0.5,
-                    }}
-                  >
-                    <Stack
-                      direction="row"
-                      alignItems="center"
-                      justifyContent="space-between"
-                      spacing={1}
-                    >
-                      <Typography variant="subtitle1">{c.name}</Typography>
-                      <Chip
-                        label={c.active ? "Active" : "Inactive"}
-                        color={c.active ? "success" : "default"}
-                        size="small"
-                      />
-                    </Stack>
-
-                    <Typography variant="body2" color="text.secondary">
-                      {c.targetUrl ?? c.url ?? "No URL configured"}
-                    </Typography>
-
-                    <Typography variant="caption" color="text.secondary">
-                      Engagements: {c.engagements}
-                      {c.createdAt &&
-                        ` • Created ${formatShortDateTime(c.createdAt)}`}
-                    </Typography>
-
-                    {c.brandId && (
-                      <Box sx={{ mt: 0.5 }}>
-                        <Button
-                          size="small"
-                          variant="text"
-                          onClick={() =>
-                            navigate(`/campaigns/${c.brandId}/${c.id}`)
-                          }
-                        >
-                          View campaign detail
-                        </Button>
-                      </Box>
-                    )}
-                  </Box>
-                ))}
-              </Stack>
-            )}
-          </CardContent>
-        </Card>
-      </Box>
-
-
-      {/* Units list */}
-      <Box sx={{ mt: 4 }}>
-        <Box sx={{ display: "flex", justifyContent: "space-between", mb: 1.5 }}>
-          <Typography variant="h6">Units at this location</Typography>
-          {canEdit && (
-            <Button variant="contained" size="small" onClick={openAddUnitDialog}>
-              Add unit
-            </Button>
+            </div>
           )}
-        </Box>
+        </div>
 
-        {unitsLoading && (
-          <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
-            <CircularProgress size={24} />
-          </Box>
-        )}
+        {/* Info Cards */}
+        <LocationInfoCards location={location} />
 
-        {unitsError && (
-          <Typography color="error" variant="body2" sx={{ mt: 1 }}>
-            {unitsError}
-          </Typography>
-        )}
+        {/* Promotions */}
+        <PromotionsSection
+          locationId={location.id}
+          promotions={promotions}
+          loading={promotionsLoading}
+          error={promotionsError}
+        />
 
-        {!unitsLoading && !unitsError && (
-          <TableContainer component={Paper} sx={{ mt: 1 }}>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Unit</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell>Health</TableCell>
-                  <TableCell>Last heartbeat</TableCell>
-                  <TableCell>Last interaction</TableCell>
-                  <TableCell>Last session</TableCell>
-                  <TableCell align="right">Success / Fault</TableCell>
-                  {canEdit && <TableCell align="right">Actions</TableCell>}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {groupedUnits.map((group) => (
-                  <Fragment key={group.position}>
-                    {/* Group header */}
-                    <TableRow sx={{ backgroundColor: "action.hover" }}>
-                      <TableCell colSpan={unitsHeaderColSpan}>
-                        <Typography variant="subtitle2">
-                          {group.position}
-                        </Typography>
-                      </TableCell>
-                    </TableRow>
-
-                    {/* Units in this group */}
-                    {group.units.map((unit) => {
-                      const healthStatus = unit.health?.status ?? "unknown";
-                      const healthNeedsMaintenance =
-                        unit.health?.needsMaintenance ?? false;
-
-                      return (
-                        <TableRow key={unit.id} hover>
-                          {/* Unit name + device type */}
-                          <TableCell>
-                            <Box
-                              sx={{
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: 0.25,
-                              }}
-                            >
-                              <Typography
-                                variant="body2"
-                                sx={{ fontWeight: 500 }}
-                              >
-                                {unit.name}
-                              </Typography>
-                              <Typography
-                                variant="caption"
-                                color="text.secondary"
-                              >
-                                {unit.currentDeviceType ?? "-"}
-                                {unit.currentMode
-                                  ? ` · ${unit.currentMode}`
-                                  : ""}
-                              </Typography>
-                            </Box>
-                          </TableCell>
-
-                          {/* Status / in use */}
-                          <TableCell>
-                            <Box
-                              sx={{
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: 0.5,
-                              }}
-                            >
-                              <Chip
-                                label={unit.status ?? "unknown"}
-                                size="small"
-                                color={
-                                  unit.status === "online"
-                                    ? "success"
-                                    : unit.status === "warning"
-                                    ? "warning"
-                                    : "default"
-                                }
-                              />
-                              {unit.inUse != null && (
-                                <Typography
-                                  variant="caption"
-                                  color="text.secondary"
-                                >
-                                  {unit.inUse ? "In use" : "Idle"}
-                                </Typography>
-                              )}
-                            </Box>
-                          </TableCell>
-
-                          {/* Health */}
-                          <TableCell>
-                            <Box
-                              sx={{
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: 0.5,
-                              }}
-                            >
-                              <Chip
-                                label={healthStatus}
-                                size="small"
-                                color={
-                                  healthStatus === "ok"
-                                    ? "success"
-                                    : healthStatus === "warning"
-                                    ? "warning"
-                                    : healthStatus === "critical"
-                                    ? "error"
-                                    : "default"
-                                }
-                                variant={
-                                  healthNeedsMaintenance ? "filled" : "outlined"
-                                }
-                              />
-                              {healthNeedsMaintenance && (
-                                <Typography variant="caption" color="error">
-                                  Needs maintenance
-                                </Typography>
-                              )}
-                            </Box>
-                          </TableCell>
-
-                          {/* Last heartbeat */}
-                          <TableCell>
-                            {formatShortDateTime(unit.lastHeartbeat)}
-                          </TableCell>
-
-                          {/* Last interaction */}
-                          <TableCell>
-                            <Box
-                              sx={{
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: 0.25,
-                              }}
-                            >
-                              <Typography variant="body2">
-                                {unit.lastInteractionType ?? "-"}
-                              </Typography>
-                              <Typography
-                                variant="caption"
-                                color="text.secondary"
-                              >
-                                {formatShortDateTime(unit.lastInteraction)}
-                              </Typography>
-                            </Box>
-                          </TableCell>
-
-                          {/* Last session */}
-                          <TableCell>
-                            <Box
-                              sx={{
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: 0.25,
-                              }}
-                            >
-                              <Typography variant="body2">
-                                {unit.lastSessionDuration != null
-                                  ? `${unit.lastSessionDuration} min`
-                                  : "-"}
-                              </Typography>
-                              <Typography
-                                variant="caption"
-                                color="text.secondary"
-                              >
-                                {formatShortDateTime(
-                                  unit.lastSessionTimestamp
-                                )}
-                              </Typography>
-                            </Box>
-                          </TableCell>
-
-                          {/* Success / fault rates */}
-                          <TableCell align="right">
-                            <Box
-                              sx={{
-                                display: "flex",
-                                flexDirection: "column",
-                                gap: 0.25,
-                              }}
-                            >
-                              <Typography variant="body2">
-                                {formatPercent(unit.metrics?.successRate)}{" "}
-                                success
-                              </Typography>
-                              <Typography
-                                variant="caption"
-                                color="text.secondary"
-                              >
-                                {formatPercent(unit.metrics?.faultRate)} fault
-                              </Typography>
-                            </Box>
-                          </TableCell>
-
-                          {/* Actions */}
-                          {canEdit && (
-                            <TableCell align="right">
-                              <Button
-                                size="small"
-                                variant="text"
-                                onClick={() => openEditUnitDialog(unit)}
-                              >
-                                Edit
-                              </Button>
-                            </TableCell>
-                          )}
-                        </TableRow>
-                      );
-                    })}
-                  </Fragment>
-                ))}
-
-                {groupedUnits.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={unitsHeaderColSpan}>
-                      <Typography
-                        align="center"
-                        variant="body2"
-                        sx={{ py: 1.5 }}
-                      >
-                        No units found for this location.
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
-      </Box>
-
-      {/* Sessions list */}
-      <Box sx={{ mt: 4 }}>
-        <Box
-          sx={{
-            mb: 1.5,
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: 2,
-            flexWrap: "wrap",
-          }}
-        >
-          <Typography variant="h6">Recent sessions</Typography>
-
-          <Stack
-            direction="row"
-            spacing={2}
-            alignItems="center"
-            flexWrap="wrap"
-          >
-            <ToggleButtonGroup
-              size="small"
-              value={sessionsDateFilter}
-              exclusive
-              onChange={(_, value: DateFilter | null) => {
-                if (value) setSessionsDateFilter(value);
-              }}
-            >
-              <ToggleButton value="all">All</ToggleButton>
-              <ToggleButton value="today">Today</ToggleButton>
-              <ToggleButton value="last7">Last 7 days</ToggleButton>
-            </ToggleButtonGroup>
-
-            <FormControl size="small" sx={{ minWidth: 160 }}>
-              <InputLabel id="sessions-unit-filter-label">Unit</InputLabel>
-              <Select
-                labelId="sessions-unit-filter-label"
-                label="Unit"
-                value={sessionsUnitFilter}
-                onChange={(e) => setSessionsUnitFilter(e.target.value)}
-              >
-                <MenuItem value="all">All units</MenuItem>
-                {unitNameOptions.map((name) => (
-                  <MenuItem key={name} value={name}>
-                    {name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <FormControlLabel
-              control={
-                <Checkbox
-                  checked={sessionsInProgressOnly}
-                  onChange={(e) =>
-                    setSessionsInProgressOnly(e.target.checked)
-                  }
-                  size="small"
-                />
-              }
-              label="In progress only"
-            />
-          </Stack>
-        </Box>
-
-        {sessionsLoading && (
-          <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
-            <CircularProgress size={24} />
-          </Box>
-        )}
-
-        {sessionsError && (
-          <Typography color="error" variant="body2" sx={{ mt: 1 }}>
-            {sessionsError}
-          </Typography>
-        )}
-
-        {!sessionsLoading && !sessionsError && (
-          <TableContainer component={Paper} sx={{ mt: 1 }}>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Unit</TableCell>
-                  <TableCell>Started</TableCell>
-                  <TableCell>Ended</TableCell>
-                  <TableCell>Duration</TableCell>
-                  <TableCell>Status</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {filteredSessions.map((s) => {
-                  const statusLabel = s.inProgress ? "In progress" : "Completed";
-
-                  let duration = s.durationMinutes;
-                  if (duration == null && s.startedAt && s.endedAt) {
-                    const diffMs = s.endedAt.getTime() - s.startedAt.getTime();
-                    const mins = Math.round(diffMs / 60000);
-                    duration = mins;
-                  }
-
-                  const unitDisplay = s.unitName ?? s.unitId ?? "-";
-
-                  return (
-                    <TableRow
-                      key={s.id}
-                      hover
-                      sx={{ cursor: "pointer" }}
-                      onClick={() => openSessionDetail(s)}
-                    >
-                      <TableCell>{unitDisplay}</TableCell>
-                      <TableCell>{formatDateTime(s.startedAt)}</TableCell>
-                      <TableCell>
-                        {s.inProgress ? "—" : formatDateTime(s.endedAt)}
-                      </TableCell>
-                      <TableCell>
-                        {s.inProgress ? "—" : formatDurationMinutes(duration)}
-                      </TableCell>
-                      <TableCell>
-                        <Chip
-                          label={statusLabel}
-                          color={s.inProgress ? "primary" : "default"}
-                          size="small"
-                        />
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-
-                {filteredSessions.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={5}>
-                      <Typography
-                        align="center"
-                        variant="body2"
-                        sx={{ py: 1.5 }}
-                      >
-                        No sessions match the current filters.
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
-      </Box>
-
-      {/* Location edit dialog */}
-      <Dialog
-        open={isEditOpen}
-        onClose={closeEditDialog}
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle>Edit location</DialogTitle>
-        <form onSubmit={handleEditSubmit}>
-          <DialogContent sx={{ pt: 1 }}>
-            {editForm && (
-              <>
-                <TextField
-                  label="Name"
-                  fullWidth
-                  margin="normal"
-                  value={editForm.name}
-                  onChange={handleEditChange("name")}
-                  required
-                />
-                <TextField
-                  label="Address"
-                  fullWidth
-                  margin="normal"
-                  value={editForm.address}
-                  onChange={handleEditChange("address")}
-                />
-                <TextField
-                  label="City"
-                  fullWidth
-                  margin="normal"
-                  value={editForm.city}
-                  onChange={handleEditChange("city")}
-                />
-                <TextField
-                  label="Country"
-                  fullWidth
-                  margin="normal"
-                  value={editForm.country}
-                  onChange={handleEditChange("country")}
-                />
-                <TextField
-                  label="Category"
-                  fullWidth
-                  margin="normal"
-                  value={editForm.category}
-                  onChange={handleEditChange("category")}
-                />
-                <TextField
-                  label="Brand"
-                  fullWidth
-                  margin="normal"
-                  value={editForm.brand}
-                  onChange={handleEditChange("brand")}
-                />
-                <TextField
-                  label="Store location"
-                  helperText='e.g. "Sea Point"'
-                  fullWidth
-                  margin="normal"
-                  value={editForm.storeLocation}
-                  onChange={handleEditChange("storeLocation")}
-                />
-                <TextField
-                  label="QR code link"
-                  helperText='e.g. "https://opencharge.io/e/sb/sp"'
-                  fullWidth
-                  margin="normal"
-                  value={editForm.qrCode}
-                  onChange={handleEditChange("qrCode")}
-                />
-                <TextField
-                  label="Latitude"
-                  type="number"
-                  fullWidth
-                  margin="normal"
-                  value={editForm.lat}
-                  onChange={handleEditChange("lat")}
-                />
-                <TextField
-                  label="Longitude"
-                  type="number"
-                  fullWidth
-                  margin="normal"
-                  value={editForm.lng}
-                  onChange={handleEditChange("lng")}
-                />
-                <TextField
-                  label="Priority"
-                  type="number"
-                  fullWidth
-                  margin="normal"
-                  value={editForm.priority}
-                  onChange={handleEditChange("priority")}
-                />
-
-                <Box sx={{ mt: 2 }}>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={editForm.active}
-                        onChange={handleEditChange("active")}
-                      />
-                    }
-                    label="Active"
-                  />
-                </Box>
-                <Box>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={editForm.supportsOrdering}
-                        onChange={handleEditChange("supportsOrdering")}
-                      />
-                    }
-                    label="Supports ordering"
-                  />
-                </Box>
-                <Box>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={editForm.supportsPayments}
-                        onChange={handleEditChange("supportsPayments")}
-                      />
-                    }
-                    label="Supports payments"
-                  />
-                </Box>
-                <Box>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={editForm.supportsPromotions}
-                        onChange={handleEditChange("supportsPromotions")}
-                      />
-                    }
-                    label="Supports promotions"
-                  />
-                </Box>
-
-                <Divider sx={{ my: 2 }} />
-                <Typography variant="subtitle1" gutterBottom>
-                  Opening hours (e.g. 08:00-20:00, leave blank for closed)
-                </Typography>
-
-                <Grid container spacing={1}>
-                  <Grid item xs={6}>
-                    <TextField
-                      label="Mon"
-                      fullWidth
-                      margin="dense"
-                      value={editForm.openHoursMon}
-                      onChange={handleEditChange("openHoursMon")}
-                    />
-                  </Grid>
-                  <Grid item xs={6}>
-                    <TextField
-                      label="Tue"
-                      fullWidth
-                      margin="dense"
-                      value={editForm.openHoursTue}
-                      onChange={handleEditChange("openHoursTue")}
-                    />
-                  </Grid>
-                  <Grid item xs={6}>
-                    <TextField
-                      label="Wed"
-                      fullWidth
-                      margin="dense"
-                      value={editForm.openHoursWed}
-                      onChange={handleEditChange("openHoursWed")}
-                    />
-                  </Grid>
-                  <Grid item xs={6}>
-                    <TextField
-                      label="Thu"
-                      fullWidth
-                      margin="dense"
-                      value={editForm.openHoursThu}
-                      onChange={handleEditChange("openHoursThu")}
-                    />
-                  </Grid>
-                  <Grid item xs={6}>
-                    <TextField
-                      label="Fri"
-                      fullWidth
-                      margin="dense"
-                      value={editForm.openHoursFri}
-                      onChange={handleEditChange("openHoursFri")}
-                    />
-                  </Grid>
-                  <Grid item xs={6}>
-                    <TextField
-                      label="Sat"
-                      fullWidth
-                      margin="dense"
-                      value={editForm.openHoursSat}
-                      onChange={handleEditChange("openHoursSat")}
-                    />
-                  </Grid>
-                  <Grid item xs={6}>
-                    <TextField
-                      label="Sun"
-                      fullWidth
-                      margin="dense"
-                      value={editForm.openHoursSun}
-                      onChange={handleEditChange("openHoursSun")}
-                    />
-                  </Grid>
-                </Grid>
-
-                {saveError && (
-                  <Typography color="error" variant="body2" sx={{ mt: 1 }}>
-                    {saveError}
-                  </Typography>
-                )}
-              </>
-            )}
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={closeEditDialog} disabled={saving}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="contained" disabled={saving}>
-              {saving ? "Saving..." : "Save changes"}
-            </Button>
-          </DialogActions>
-        </form>
-      </Dialog>
-
-      {/* Unit add/edit dialog */}
-      <Dialog
-        open={isUnitDialogOpen}
-        onClose={closeUnitDialog}
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle>
-          {unitDialogMode === "add" ? "Add unit" : "Edit unit"}
-        </DialogTitle>
-        <form onSubmit={handleUnitSubmit}>
-          <DialogContent sx={{ pt: 1 }}>
-            {unitForm && (
-              <>
-                <TextField
-                  label="Unit name"
-                  helperText='e.g. "SBSP-BR05"'
-                  fullWidth
-                  margin="normal"
-                  value={unitForm.name}
-                  onChange={handleUnitChange("name")}
-                  required
-                />
-                <TextField
-                  label="Position"
-                  helperText="e.g. Boardroom, Oval Power Table, Balcony Edge Tables"
-                  fullWidth
-                  margin="normal"
-                  value={unitForm.position}
-                  onChange={handleUnitChange("position")}
-                />
-                <TextField
-                  label="Status"
-                  helperText='e.g. "online", "offline", "maintenance"'
-                  fullWidth
-                  margin="normal"
-                  value={unitForm.status}
-                  onChange={handleUnitChange("status")}
-                />
-                <TextField
-                  label="Total sessions"
-                  type="number"
-                  fullWidth
-                  margin="normal"
-                  value={unitForm.totalSessions}
-                  onChange={handleUnitChange("totalSessions")}
-                />
-                <Box sx={{ mt: 1 }}>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={unitForm.inUse}
-                        onChange={handleUnitChange("inUse")}
-                      />
-                    }
-                    label="In use right now"
-                  />
-                </Box>
-
-                {unitSaveError && (
-                  <Typography color="error" variant="body2" sx={{ mt: 1 }}>
-                    {unitSaveError}
-                  </Typography>
-                )}
-              </>
-            )}
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={closeUnitDialog} disabled={unitSaving}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="contained" disabled={unitSaving}>
-              {unitSaving
-                ? "Saving..."
-                : unitDialogMode === "add"
-                ? "Add unit"
-                : "Save changes"}
-            </Button>
-          </DialogActions>
-        </form>
-      </Dialog>
-
-      {/* Edit images dialog */}
-      <Dialog
-        open={imagesDialogOpen}
-        onClose={handleCloseImagesDialog}
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle>Edit location images</DialogTitle>
-        <DialogContent dividers>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-            Paste one image URL per line. These URLs are used both in the admin
-            dashboard and in the mobile app.
-          </Typography>
-
-          <TextField
-            label="Image URLs"
-            multiline
-            minRows={6}
-            fullWidth
-            margin="normal"
-            value={imagesText}
-            onChange={(e) => setImagesText(e.target.value)}
-            placeholder={"https://...\nhttps://...\nhttps://..."}
+        {/* Engage Campaigns */}
+        {brandSlug && storeSlug && (
+          <EngageCampaignsTable
+            campaigns={engageCampaigns}
+            brandSlug={brandSlug}
+            storeSlug={storeSlug}
+            loading={engageLoading}
+            error={engageError}
           />
+        )}
 
-          {imagesError && (
-            <Typography color="error" variant="body2" sx={{ mt: 1 }}>
-              {imagesError}
-            </Typography>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseImagesDialog} disabled={savingImages}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSaveImages}
-            variant="contained"
-            disabled={savingImages}
-          >
-            {savingImages ? "Saving..." : "Save images"}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        {/* Regular Campaigns */}
+        <CampaignsSection
+          campaigns={campaigns}
+          loading={campaignsLoading}
+          error={campaignsError}
+        />
 
-      {/* Session detail drawer */}
-      <Drawer
-        anchor="right"
-        open={sessionDetailOpen}
-        onClose={closeSessionDetail}
-      >
-        <Box
-          sx={{
-            width: 360,
-            p: 2,
-            display: "flex",
-            flexDirection: "column",
-            height: "100%",
-          }}
-        >
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              mb: 2,
-            }}
-          >
-            <Typography variant="h6">Session details</Typography>
-            <IconButton size="small" onClick={closeSessionDetail}>
-              <CloseIcon fontSize="small" />
-            </IconButton>
-          </Box>
+        {/* Units Table */}
+        <UnitsTable
+          units={units}
+          loading={unitsLoading}
+          error={unitsError}
+          canEdit={canEdit}
+          onAddUnit={openAddUnitDialog}
+          onEditUnit={openEditUnitDialog}
+          onUnitClick={(unitId) => navigate(`/units/${unitId}`)}
+        />
 
-          {selectedSession ? (
-            <>
-              <Typography variant="subtitle2" gutterBottom>
-                Overview
-              </Typography>
-              <List dense>
-                <ListItem>
-                  <ListItemText
-                    primary="Session ID"
-                    secondary={selectedSession.id}
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemText
-                    primary="Location ID"
-                    secondary={selectedSession.locationId ?? location.id}
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemText
-                    primary="Unit"
-                    secondary={
-                      selectedSession.unitName ??
-                      selectedSession.unitId ??
-                      "-"
-                    }
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemText
-                    primary="Status"
-                    secondary={
-                      selectedSession.inProgress
-                        ? "In progress"
-                        : "Completed"
-                    }
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemText
-                    primary="Started"
-                    secondary={formatDateTime(selectedSession.startedAt)}
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemText
-                    primary="Ended"
-                    secondary={
-                      selectedSession.inProgress
-                        ? "—"
-                        : formatDateTime(selectedSession.endedAt)
-                    }
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemText
-                    primary="Duration"
-                    secondary={
-                      selectedSession.inProgress
-                        ? "—"
-                        : formatDurationMinutes(
-                            selectedSession.durationMinutes
-                          )
-                    }
-                  />
-                </ListItem>
-              </List>
+        {/* Sessions Table */}
+        <LocationSessionsTable
+          sessions={filteredSessions}
+          units={units}
+          loading={sessionsLoading}
+          error={sessionsError}
+          dateFilter={sessionsDateFilter}
+          onDateFilterChange={setSessionsDateFilter}
+          unitFilter={sessionsUnitFilter}
+          onUnitFilterChange={setSessionsUnitFilter}
+          inProgressOnly={sessionsInProgressOnly}
+          onInProgressOnlyChange={setSessionsInProgressOnly}
+          onSessionClick={handleSessionClick}
+        />
 
-              {selectedSession.raw && (
-                <>
-                  <Divider sx={{ my: 2 }} />
-                  <Typography variant="subtitle2" gutterBottom>
-                    Raw metadata
-                  </Typography>
-                  <Box
-                    component="pre"
-                    sx={{
-                      fontSize: 12,
-                      bgcolor: "grey.100",
-                      p: 1,
-                      borderRadius: 1,
-                      overflow: "auto",
-                      maxHeight: 260,
-                    }}
-                  >
-                    {JSON.stringify(selectedSession.raw, null, 2)}
-                  </Box>
-                </>
-              )}
-            </>
-          ) : (
-            <Typography variant="body2" color="text.secondary">
-              No session selected.
-            </Typography>
-          )}
-        </Box>
-      </Drawer>
-    </MainLayout>
+        {/* Dialogs and Drawer */}
+        <EditLocationDialog
+          open={isEditOpen}
+          onOpenChange={setIsEditOpen}
+          location={location}
+          onSubmit={handleLocationSubmit}
+        />
+
+        <EditUnitDialog
+          open={isUnitDialogOpen}
+          onOpenChange={setIsUnitDialogOpen}
+          mode={unitDialogMode}
+          unit={selectedUnit}
+          onSubmit={handleUnitSubmit}
+        />
+
+        <EditImagesDialog
+          open={imagesDialogOpen}
+          onOpenChange={setImagesDialogOpen}
+          currentImages={location.images || []}
+          onSubmit={handleImagesSubmit}
+        />
+
+        <SessionDetailDrawer
+          open={sessionDetailOpen}
+          onOpenChange={setSessionDetailOpen}
+          session={selectedSession}
+          location={location}
+        />
+      </div>
+    </>
   );
 }

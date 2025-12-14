@@ -7,32 +7,27 @@ import {
   doc,
   type DocumentData,
 } from "firebase/firestore";
+
+import { LocationsTable } from "@/components/locations/LocationsTable";
+import { Button } from "@/components/ui/button";
 import {
-  Box,
-  Typography,
-  CircularProgress,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
-  Chip,
-  Stack,
-  Button,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  Checkbox,
-  FormControlLabel,
-} from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
+Dialog,
+DialogContent,
+DialogFooter,
+DialogHeader,
+DialogTitle,
+} from "@/components/ui/dialog";
+
+import { Plus} from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import { PulseLoader } from "@/components/common/loading/pulse-loader";
+import { PageHeader } from "../components/layout/PageHeader";
 
 import { db } from "../firebase";
-import { MainLayout } from "../components/layout/MainLayout";
+
 
 interface LocationItem {
   id: string;
@@ -299,250 +294,200 @@ export function LocationsPage() {
 
   if (loading) {
     return (
-      <MainLayout>
-        <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
-          <CircularProgress />
-        </Box>
-      </MainLayout>
+    <>
+      <PageHeader
+        title="Locations"
+        breadcrumbs={[{ label: "Locations", href: "/locations" }]}
+      />
+
+      <div className="flex flex-1 items-center justify-center p-4">
+        <div className="flex items-center gap-2">
+          {/* Pulsing circle */}
+          <PulseLoader size={8} pulseCount={4} speed={1.5} />
+        </div>
+      </div>
+    </>
+
     );
   }
 
   if (error) {
     return (
-      <MainLayout>
-        <Box sx={{ mt: 3 }}>
-          <Typography variant="h4" gutterBottom>
-            Locations
-          </Typography>
-          <Typography color="error">{error}</Typography>
-        </Box>
-      </MainLayout>
+    <>
+      <PageHeader
+        title="Locations"
+        breadcrumbs={[{ label: "Locations", href: "/locations" }]}
+      />
+
+      <div className="flex flex-1 items-center justify-center p-4">
+        <div className="flex items-center gap-2">
+          {/*Error */}
+          {error}
+        </div>
+      </div>
+    </>
+
     );
   }
 
   return (
-    <MainLayout>
+    <>
       {/* Header */}
-      <Box
-        sx={{
-          mb: 3,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 2,
-          flexWrap: "wrap",
-        }}
-      >
-        <Box>
-          <Typography variant="h4" gutterBottom>
-            Locations
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Manage Opencharge venues and see sessions and unit utilisation per
-            location.
-          </Typography>
-        </Box>
+      <PageHeader
+        title="Locations"
+        breadcrumbs={[{ label: "Locations", href: "/locations" }]}
+      />
+     
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">Locations</h1>
+          <p className="text-sm text-muted-foreground">
+          Manage Opencharge venues and see sessions and unit utilisation per
+            site.
+          </p>
+        </div>
 
-        <Button
-          variant="contained"
-          startIcon={<AddIcon />}
-          onClick={openDialog}
-        >
+        <Button onClick={openDialog}>
+          <Plus className="mr-2 h-4 w-4" />
           New location
         </Button>
-      </Box>
+
+      </div>
+
 
       {/* Table */}
-      <TableContainer component={Paper}>
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>Brand</TableCell>
-              <TableCell>Store</TableCell>
-              <TableCell>Name</TableCell>
-              <TableCell>City</TableCell>
-              <TableCell>Category</TableCell>
-              <TableCell>Sessions</TableCell>
-              <TableCell>Units</TableCell>
-              <TableCell>QR code</TableCell>
-              <TableCell>Active</TableCell>
-              <TableCell>Promotions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {locations.map((loc) => (
-              <TableRow
-                key={loc.id}
-                hover
-                sx={{ cursor: "pointer" }}
-                onClick={() => navigate(`/locations/${encodeURIComponent(loc.id)}`)}
-              >
-                <TableCell>{loc.brand ?? "—"}</TableCell>
-                <TableCell>{loc.storeLocation ?? "—"}</TableCell>
-                <TableCell>{loc.name}</TableCell>
-                <TableCell>{loc.city ?? "—"}</TableCell>
-                <TableCell>{loc.category ?? "—"}</TableCell>
-                <TableCell>{loc.totalSessions ?? "—"}</TableCell>
-                <TableCell>
-                  {loc.unitTotal != null ? (
-                    <Typography variant="body2">
-                      {loc.unitInUse ?? 0} / {loc.unitTotal}
-                    </Typography>
-                  ) : (
-                    "—"
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    noWrap
-                    sx={{ maxWidth: 220 }}
-                  >
-                    {loc.qrCode ?? "—"}
-                  </Typography>
-                </TableCell>
-                <TableCell>
-                  {loc.active ? (
-                    <Chip label="Active" size="small" color="success" />
-                  ) : (
-                    <Chip label="Inactive" size="small" variant="outlined" />
-                  )}
-                </TableCell>
-                <TableCell>
-                  {loc.hasActivePromotions ? (
-                    <Chip
-                      label="Has promos"
-                      size="small"
-                      color="primary"
-                      variant="outlined"
-                    />
-                  ) : (
-                    <Typography variant="body2" color="text.secondary">
-                      —
-                    </Typography>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
+   
 
-            {locations.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={10}>
-                  <Typography
-                    align="center"
-                    variant="body2"
-                    sx={{ py: 2 }}
-                    color="text.secondary"
-                  >
-                    No locations yet. Click “New location” to add your first
-                    store.
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
+      <LocationsTable
+        data={locations}
+        onRowClick={(id) =>
+          navigate(`/locations/${encodeURIComponent(id)}`)
+        }
+      />
+
 
       {/* New location dialog */}
-      <Dialog
-        open={dialogOpen}
-        onClose={closeDialog}
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle>New location</DialogTitle>
-        <form onSubmit={handleCreateLocation}>
-          <DialogContent sx={{ pt: 1 }}>
-            <Stack spacing={2}>
-              <TextField
-                label="Brand"
+      <Dialog open={dialogOpen}
+        onOpenChange={(open) => {
+          if (saving) return; // disable close while saving
+          setDialogOpen(open);
+        }}
+        >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>New location</DialogTitle>
+          </DialogHeader>
+
+          <form
+            onSubmit={handleCreateLocation}
+            className="space-y-4"
+          >
+            <div className="space-y-2">
+              <Label>Brand</Label>
+              <Input
                 value={form.brand}
                 onChange={handleFormChange("brand")}
                 required
-                helperText="e.g. Starbucks, Vida e caffè"
               />
-              <TextField
-                label="Store location"
+            </div>
+
+            <div className="space-y-2">
+              <Label>Store location</Label>
+              <Input
                 value={form.storeLocation}
                 onChange={handleFormChange("storeLocation")}
                 required
-                helperText="e.g. Sea Point, V&A Waterfront"
               />
-              <TextField
-                label="Display name"
+            </div>
+
+            <div className="space-y-2">
+              <Label>Display name</Label>
+              <Input
                 value={form.name}
                 onChange={handleFormChange("name")}
-                helperText="Optional – defaults to Brand + Store location"
               />
-              <TextField
-                label="Address"
+            </div>
+
+            <div className="space-y-2">
+              <Label>Address</Label>
+              <Textarea
                 value={form.address}
                 onChange={handleFormChange("address")}
-                multiline
-                minRows={2}
               />
-              <Stack direction={{ xs: "column", sm: "row" }} spacing={2}>
-                <TextField
-                  label="City"
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label>City</Label>
+                <Input
                   value={form.city}
                   onChange={handleFormChange("city")}
-                  fullWidth
                 />
-                <TextField
-                  label="Country"
+              </div>
+              <div className="space-y-2">
+                <Label>Country</Label>
+                <Input
                   value={form.country}
                   onChange={handleFormChange("country")}
-                  fullWidth
                 />
-              </Stack>
-              <TextField
-                label="Category"
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Category</Label>
+              <Input
                 value={form.category}
                 onChange={handleFormChange("category")}
-                helperText='e.g. "cafe", "airport", "restaurant"'
               />
-              <TextField
-                label="QR code link"
+            </div>
+
+            <div className="space-y-2">
+              <Label>QR code link</Label>
+              <Input
                 value={form.qrCode}
                 onChange={handleFormChange("qrCode")}
-                helperText="Engagement URL printed on the QR sticker, e.g. https://opencharge.io/e/sb/sp"
               />
-              <TextField
-                label="Priority"
+            </div>
+
+            <div className="space-y-2">
+              <Label>Priority</Label>
+              <Input
                 type="number"
                 value={form.priority}
                 onChange={handleFormChange("priority")}
-                helperText="Lower numbers can be treated as higher priority in lists."
               />
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={form.active}
-                    onChange={handleFormChange("active") as any}
-                  />
-                }
-                label="Active"
-              />
+            </div>
 
-              {saveError && (
-                <Typography color="error" variant="body2">
-                  {saveError}
-                </Typography>
-              )}
-            </Stack>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={closeDialog} disabled={saving}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="contained" disabled={saving}>
-              {saving ? "Saving..." : "Create location"}
-            </Button>
-          </DialogActions>
-        </form>
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                checked={form.active}
+                onCheckedChange={(v) =>
+                  setForm((p) => ({ ...p, active: Boolean(v) }))
+                }
+              />
+              <Label>Active</Label>
+            </div>
+
+            {saveError && (
+              <p className="text-sm text-destructive">{saveError}</p>
+            )}
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={closeDialog}
+                disabled={saving}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={saving}>
+                {saving ? "Saving…" : "Create location"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
       </Dialog>
-    </MainLayout>
+    </>
   );
 }
