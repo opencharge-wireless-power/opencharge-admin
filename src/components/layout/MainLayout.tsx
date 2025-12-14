@@ -13,7 +13,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset>
-        <div className=" flex flex-1 flex-col p-4 gap-4  ">
+        <div className=" flex flex-1 flex-col p-4 gap-4 pl-22 ">
           {children}
         </div>
       </SidebarInset>

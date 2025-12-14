@@ -98,7 +98,7 @@ export function AppSidebar() {
       </SidebarHeader>
 
       {/* Nav Items */}
-      <SidebarContent>
+      <SidebarContent className="py-4">
         <SidebarGroup>
           <SidebarGroupLabel>
             {/*Navigation*/}
