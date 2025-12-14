@@ -1,36 +1,36 @@
 // src/pages/UnitsListPage.tsx
-import { useEffect, useState, type ChangeEvent } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   collection,
   getDocs,
+  Timestamp,
   type DocumentData,
 } from "firebase/firestore";
 import {
-  Box,
-  Typography,
-  CircularProgress,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
-  Chip,
-  Stack,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Checkbox,
-  FormControlLabel,
-  Grid,
-} from "@mui/material";
+  RefreshCcw,
+} from "lucide-react";
 
 import { db } from "../firebase";
-import { MainLayout } from "../components/layout/MainLayout";
-import type { Unit } from "../types/Opencharge"; 
+import { PageHeader } from "../components/layout/PageHeader";
+import { OverviewCards } from "@/components/common/cards/overview-card";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+import type { Unit, UnitHealth, UnitMetrics, UnitInteractions } from "../types/Opencharge";
+import { UnitsDetailsTable } from "@/components/units/UnitsDetailsTable";
+import { PulseLoader } from "@/components/common/loading/pulse-loader";
+import { UnitWarning, UnitOffline, UnitInUse, UnitOnline, Units } from "@/components/icons/Icons";
+
 
 type StatusFilter = "all" | "online" | "offline" | "warning";
 
@@ -39,28 +39,19 @@ type ListUnit = Unit & {
   locationId?: string;
   healthStatus?: string;
   needsMaintenance: boolean;
+  inUse: boolean;
 };
 
 // small helper for Firestore timestamps / nulls
-function tsToDate(value: any): Date | undefined {
-  return value && typeof value.toDate === "function"
-    ? value.toDate()
-    : undefined;
+function tsToDate(value: Timestamp | null | undefined): Date | undefined {
+  return value?.toDate();
 }
 
-function formatDateTime(date?: Date): string {
-  if (!date) return "-";
-  return date.toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 export function UnitsListPage() {
-  const navigate = useNavigate();
+ 
+  // TODO: Check why navigate hook is not used but it defined here for _navigate for ESLint
+  const _navigate = useNavigate();
 
   const [units, setUnits] = useState<ListUnit[]>([]);
   const [loading, setLoading] = useState(true);
@@ -92,9 +83,9 @@ export function UnitsListPage() {
           const healthStatus = health.status as string | undefined;
 
           const positionField =
-                (metrics.position as string | undefined) ??
-                (data.position as string | undefined) ??
-                undefined;
+            (metrics.position as string | undefined) ??
+            (data.position as string | undefined) ??
+            undefined;
 
           const lastHeartbeat = tsToDate(data.lastHeartbeat);
           const lastInteraction = tsToDate(data.lastInteraction);
@@ -162,9 +153,9 @@ export function UnitsListPage() {
             totalInteractions,
             particleDeviceId,
 
-            health: health as any,
-            metrics: metrics as any,
-            interactions: data.interactions as any,
+            health: health as UnitHealth, 
+            metrics: metrics as UnitMetrics,
+            interactions: data.interactions as UnitInteractions,
 
             // list-specific extras
             locationId: data.locationId as string | undefined,
@@ -209,11 +200,7 @@ export function UnitsListPage() {
 
   // distinct locations
   const locationOptions: string[] = Array.from(
-    new Set(
-      units
-        .map((u) => u.locationId)
-        .filter((id): id is string => !!id)
-    )
+    new Set(units.map((u) => u.locationId).filter((id): id is string => !!id))
   ).sort((a, b) => a.localeCompare(b));
 
   // filters
@@ -224,7 +211,8 @@ export function UnitsListPage() {
 
     if (statusFilter !== "all") {
       if (statusFilter === "warning") {
-        if (u.healthStatus !== "warning" && u.status !== "warning") return false;
+        if (u.healthStatus !== "warning" && u.status !== "warning")
+          return false;
       } else {
         if (u.status !== statusFilter) return false;
       }
@@ -236,320 +224,173 @@ export function UnitsListPage() {
     return true;
   });
 
-  const handleLocationChange = (e: ChangeEvent<{ value: unknown }>) => {
-    setLocationFilter(e.target.value as string);
-  };
-
-  const handleStatusChange = (e: ChangeEvent<{ value: unknown }>) => {
-    setStatusFilter(e.target.value as StatusFilter);
-  };
-
   if (loading) {
     return (
-      <MainLayout>
-        <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
-          <CircularProgress />
-        </Box>
-      </MainLayout>
+      <>
+        <PageHeader title="Units" breadcrumbs={[{ label: "Units", href: "/units" }]} />
+        <div className="flex flex-1 items-center justify-center p-4">
+        <div className="flex items-center gap-2">
+          {/* Pulsing circle */}
+          <PulseLoader size={8} pulseCount={4} speed={1.5} />
+        </div>
+      </div>
+      </>
     );
   }
 
   if (error) {
     return (
-      <MainLayout>
-        <Box sx={{ mt: 3 }}>
-          <Typography variant="h4" gutterBottom>
-            Units
-          </Typography>
-          <Typography color="error">{error}</Typography>
-        </Box>
-      </MainLayout>
+      <>
+        <PageHeader title="Units" breadcrumbs={[{ label: "Units", href: "/units" }]} />
+        <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+          <div className="p-4 bg-red-50 border border-red-200 rounded-md text-red-800">
+            {error}
+          </div>
+        </div>
+      </>
     );
   }
 
   return (
-    <MainLayout>
-      {/* Header */}
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h4" gutterBottom>
-          Units
-        </Typography>
-        <Typography variant="body2" color="text.secondary">
-          Monitor all charging units, filter by location, status and health, and
-          drill into a unit for full details.
-        </Typography>
-      </Box>
+    <>
+      <PageHeader title="Units" breadcrumbs={[{ label: "Units", href: "/units" }]} />
 
-      {/* KPI cards */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        <Grid item xs={12} sm={6} md={2.4}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              border: "1px solid",
-              borderColor: "divider",
-            }}
-          >
-            <Typography variant="subtitle2" color="text.secondary">
-              Units
-            </Typography>
-            <Typography variant="h4">{totalUnits}</Typography>
-            <Typography variant="caption" color="text.secondary">
-              Total deployed
-            </Typography>
-          </Paper>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={2.4}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              border: "1px solid",
-              borderColor: "divider",
-            }}
-          >
-            <Typography variant="subtitle2" color="text.secondary">
-              Online
-            </Typography>
-            <Typography variant="h4">{onlineCount}</Typography>
-            <Typography variant="caption" color="text.secondary">
-              Reporting as online
-            </Typography>
-          </Paper>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={2.4}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              border: "1px solid",
-              borderColor: "divider",
-            }}
-          >
-            <Typography variant="subtitle2" color="text.secondary">
-              Offline
-            </Typography>
-            <Typography variant="h4">{offlineCount}</Typography>
-            <Typography variant="caption" color="text.secondary">
-              Not currently online
-            </Typography>
-          </Paper>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={2.4}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              border: "1px solid",
-              borderColor: "divider",
-            }}
-          >
-            <Typography variant="subtitle2" color="text.secondary">
-              Warning / degraded
-            </Typography>
-            <Typography variant="h4">{warningCount}</Typography>
-            <Typography variant="caption" color="text.secondary">
-              Health status warning
-            </Typography>
-          </Paper>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={2.4}>
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2,
-              borderRadius: 2,
-              border: "1px solid",
-              borderColor: "divider",
-            }}
-          >
-            <Typography variant="subtitle2" color="text.secondary">
-              In use
-            </Typography>
-            <Typography variant="h4">{inUseCount}</Typography>
-            <Typography variant="caption" color="text.secondary" display="block">
-              Currently charging
-            </Typography>
-            <Typography variant="caption" color="text.secondary" display="block">
-              {maintenanceCount} need maintenance
-            </Typography>
-          </Paper>
-        </Grid>
-      </Grid>
-
-      {/* Filters */}
-      <Box
-        sx={{
-          mb: 2,
-          display: "flex",
-          flexWrap: "wrap",
-          gap: 2,
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
-      >
-        <Stack direction="row" spacing={2} flexWrap="wrap">
-          <FormControl size="small" sx={{ minWidth: 200 }}>
-            <InputLabel id="location-filter-label">Location</InputLabel>
-            <Select
-              labelId="location-filter-label"
-              label="Location"
-              value={locationFilter}
-              onChange={handleLocationChange as any}
+      <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+        {/* Header section */}
+        <div className="flex justify-between items-center">
+          <div>
+            <p className="text-muted-foreground">
+              Monitor all charging units, filter by location, status and health,
+              and drill into a unit for full details.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => window.location.reload()}
             >
-              <MenuItem value="all">All locations</MenuItem>
-              {locationOptions.map((loc) => (
-                <MenuItem key={loc} value={loc}>
-                  {loc}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
+              <RefreshCcw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
+        </div>
 
-          <FormControl size="small" sx={{ minWidth: 180 }}>
-            <InputLabel id="status-filter-label">Status</InputLabel>
-            <Select
-              labelId="status-filter-label"
-              label="Status"
-              value={statusFilter}
-              onChange={handleStatusChange as any}
-            >
-              <MenuItem value="all">All</MenuItem>
-              <MenuItem value="online">Online</MenuItem>
-              <MenuItem value="offline">Offline</MenuItem>
-              <MenuItem value="warning">Warning</MenuItem>
-            </Select>
-          </FormControl>
-        </Stack>
+        {/* KPI cards */}
+        <OverviewCards
+          columns={5}
+          stats={[
+            {
+              title: "Total Units",
+              value: totalUnits.toString(),
+              subtitle: "Total deployed",
+              icon: Units,
+            },
+            {
+              title: "Online",
+              value: onlineCount.toString(),
+              subtitle: "Reporting as online",
+              icon: UnitOnline,
+            },
+            {
+              title: "Offline",
+              value: offlineCount.toString(),
+              subtitle: "Not currently online",
+              icon: UnitOffline,
+            },
+            {
+              title: "Warning / Degraded",
+              value: warningCount.toString(),
+              subtitle: "Health status warning",
+              icon: UnitWarning,
+            },
+            {
+              title: "In Use",
+              value: inUseCount.toString(),
+              subtitle: `Currently charging • ${maintenanceCount} need maintenance`,
+              icon: UnitInUse,
+            },
+          ]}
+        />
 
-        <Stack direction="row" spacing={2}>
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={inUseOnly}
-                onChange={(e) => setInUseOnly(e.target.checked)}
-                size="small"
-              />
-            }
-            label="In use only"
-          />
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={maintenanceOnly}
-                onChange={(e) => setMaintenanceOnly(e.target.checked)}
-                size="small"
-              />
-            }
-            label="Needs maintenance only"
-          />
-        </Stack>
-      </Box>
+        {/* Filters */}
+        <Card className="shadow-none">
+          <CardContent className="pt-6">
+            <div className="flex flex-wrap gap-4 items-end">
+              <div className="flex-1 max-w-[200px]">
+                <Label htmlFor="location-filter" className="mb-2 block">
+                  Location
+                </Label>
+                <Select value={locationFilter} onValueChange={setLocationFilter}>
+                  <SelectTrigger id="location-filter">
+                    <SelectValue placeholder="All locations" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All locations</SelectItem>
+                    {locationOptions.map((loc) => (
+                      <SelectItem key={loc} value={loc}>
+                        {loc}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
 
-      {/* Table */}
-      <TableContainer component={Paper}>
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell>Unit</TableCell>
-              <TableCell>Location</TableCell>
-              <TableCell>Position</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Health</TableCell>
-              <TableCell>In use</TableCell>
-              <TableCell>Last heartbeat</TableCell>
-              <TableCell align="right">Last session (min)</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filteredUnits.map((u) => (
-              <TableRow
-                key={u.id}
-                hover
-                sx={{ cursor: "pointer" }}
-                onClick={() => navigate(`/units/${u.id}`)}
-              >
-                <TableCell>{u.name}</TableCell>
-                <TableCell>{u.locationId ?? "—"}</TableCell>
-                <TableCell>{u.position ?? "—"}</TableCell>
-                <TableCell>
-                  {u.status ? (
-                    <Chip
-                      label={u.status}
-                      size="small"
-                      color={
-                        u.status === "online"
-                          ? "success"
-                          : u.status === "offline"
-                          ? "default"
-                          : "warning"
-                      }
-                    />
-                  ) : (
-                    "—"
-                  )}
-                </TableCell>
-                <TableCell>
-                  {u.needsMaintenance ? (
-                    <Chip
-                      label={u.healthStatus ?? "Needs maintenance"}
-                      size="small"
-                      color="warning"
-                    />
-                  ) : u.healthStatus ? (
-                    <Chip
-                      label={u.healthStatus}
-                      size="small"
-                      color={
-                        u.healthStatus === "warning" ? "warning" : "default"
-                      }
-                    />
-                  ) : (
-                    "—"
-                  )}
-                </TableCell>
-                <TableCell>
-                  {u.inUse ? (
-                    <Chip label="In use" size="small" color="info" />
-                  ) : (
-                    <Chip label="Idle" size="small" variant="outlined" />
-                  )}
-                </TableCell>
-                <TableCell>{formatDateTime(u.lastHeartbeat)}</TableCell>
-                <TableCell align="right">
-                  {u.lastSessionDuration != null
-                    ? u.lastSessionDuration.toFixed(0)
-                    : "—"}
-                </TableCell>
-              </TableRow>
-            ))}
+              <div className="flex-1 max-w-[200px]">
+                <Label htmlFor="status-filter" className="mb-2 block">
+                  Status
+                </Label>
+                <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+                  <SelectTrigger id="status-filter">
+                    <SelectValue placeholder="All" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="online">Online</SelectItem>
+                    <SelectItem value="offline">Offline</SelectItem>
+                    <SelectItem value="warning">Warning</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
 
-            {filteredUnits.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={8}>
-                  <Typography
-                    align="center"
-                    variant="body2"
-                    sx={{ py: 2 }}
-                    color="text.secondary"
+              <div className="flex gap-4 items-center">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="in-use-only"
+                    checked={inUseOnly}
+                    onCheckedChange={(checked) => setInUseOnly(checked === true)}
+                  />
+                  <Label
+                    htmlFor="in-use-only"
+                    className="text-sm font-normal cursor-pointer"
                   >
-                    No units match the current filters.
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </TableContainer>
-    </MainLayout>
+                    In use only
+                  </Label>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="maintenance-only"
+                    checked={maintenanceOnly}
+                    onCheckedChange={(checked) =>
+                      setMaintenanceOnly(checked === true)
+                    }
+                  />
+                  <Label
+                    htmlFor="maintenance-only"
+                    className="text-sm font-normal cursor-pointer"
+                  >
+                    Needs maintenance only
+                  </Label>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Units detail table */}
+        <UnitsDetailsTable units={filteredUnits} />
+
+      </div>
+    </>
   );
 }

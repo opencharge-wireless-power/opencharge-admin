@@ -1,5 +1,6 @@
 // src/pages/UnitDetailPage.tsx
 import { useEffect, useState } from "react";
+import { Timestamp } from 'firebase/firestore';
 import { useParams, useNavigate } from "react-router-dom";
 import {
   collection,
@@ -11,47 +12,40 @@ import {
   limit,
   type DocumentData,
 } from "firebase/firestore";
-import {
-  Box,
-  Typography,
-  CircularProgress,
-  Chip,
-  Card,
-  CardContent,
-  Grid,
-  Stack,
-  Paper,
-  Table,
-  TableHead,
-  TableRow,
-  TableCell,
-  TableBody,
-  TableContainer,
-  Button,
-  Drawer,
-  Divider,
-} from "@mui/material";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import { ArrowLeft } from "lucide-react";
+import { PulseLoader } from "@/components/common/loading/pulse-loader";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { cn } from "@/lib/utils";
 
 import { db } from "../firebase";
-import { MainLayout } from "../components/layout/MainLayout";
-import type { Unit } from "../types/Opencharge";
+import type { Unit, UnitHealth, UnitMetrics, UnitInteractions } from "../types/Opencharge";
+
+import { SessionsTable } from "@/components/units/SessionsTable";
+import { InteractionsTable } from "@/components/units/InteractionsTable";
+import { UnitDetailsDrawer } from "@/components/units/UnitDetailsDrawer";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
 // ----- helpers -----
-function tsToDate(value: any): Date | undefined {
-  return value && typeof value.toDate === "function"
-    ? value.toDate()
-    : undefined;
+
+function tsToDate(value: Timestamp | null | undefined): Date | undefined {
+  return value?.toDate();
 }
 
-function numOrUndefined(v: any): number | undefined {
-  return typeof v === "number" && !Number.isNaN(v) ? v : undefined;
+function numOrUndefined(v: unknown): number | undefined {
+  const num = Number(v);
+  return !Number.isNaN(num) ? num : undefined;
 }
 
-function dateFromMs(value: any): Date | undefined {
-  return typeof value === "number" && value > 0
-    ? new Date(value)
-    : undefined;
+function dateFromMs(value: unknown): Date | undefined {
+  const ms = numOrUndefined(value);
+  return ms && ms > 0 ? new Date(ms) : undefined;
 }
 
 function formatDate(date?: Date): string {
@@ -89,8 +83,6 @@ interface SessionRow {
   mode?: string;
   deviceType?: string;
   status?: string;
-
-  // app-level fields stored on the chargesessions doc
   appLinked?: boolean;
   appBatteryDelta?: number;
   appBatteryStartLevel?: number;
@@ -118,8 +110,6 @@ interface InteractionRow {
   type?: string;
   mode?: string;
   deviceType?: string;
-
-  // app-level fields on the interaction
   appLinked?: boolean;
   appBatteryStartLevel?: number;
   appDeviceMake?: string;
@@ -127,6 +117,24 @@ interface InteractionRow {
   appSource?: string;
   appDeviceIdHash?: string;
 }
+
+function InfoItem({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: React.ReactNode;
+  className?: string
+}) {
+  return (
+    <div className={cn("flex flex-col gap-0.5", className)}>
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="text-sm">{value}</span>
+    </div>
+  );
+}
+
 
 // ----- component -----
 export function UnitDetailPage() {
@@ -162,7 +170,6 @@ export function UnitDetailPage() {
   const drawerOpen = Boolean(selectedSession || selectedInteraction);
 
   const closeDrawer = () => {
-    if (drawerLoading) return;
     setSelectedSession(null);
     setSelectedInteraction(null);
     setSessionAppEvents([]);
@@ -258,10 +265,10 @@ export function UnitDetailPage() {
           totalSessions,
           totalInteractions,
           particleDeviceId,
-
-          health: health as any,
-          metrics: metrics as any,
-          interactions: data.interactions as any,
+          
+          health: health as UnitHealth, 
+          metrics: metrics as UnitMetrics,
+          interactions: data.interactions as UnitInteractions,
 
           locationId: data.locationId as string | undefined,
           healthStatus: health.status as string | undefined,
@@ -438,7 +445,8 @@ export function UnitDetailPage() {
         const data = docSnap.data() as DocumentData;
         return {
           id: docSnap.id,
-          time: dateFromMs(data.timestampMs) ?? dateFromMs(data.startTimestampMs),
+          time:
+            dateFromMs(data.timestampMs) ?? dateFromMs(data.startTimestampMs),
           batteryLevel: numOrUndefined(data.batteryLevel),
           batteryDelta: numOrUndefined(data.batteryDelta),
           isWireless: data.isWireless as boolean | undefined,
@@ -474,608 +482,170 @@ export function UnitDetailPage() {
     setSelectedInteraction(interaction);
   };
 
-  // ---- helpers to render "App" chip in tables ----
-  function renderSessionAppCell(s: SessionRow) {
-    const start = s.appBatteryStartLevel;
-    const end = s.appBatteryEndLevel;
-    const delta =
-      s.appBatteryDelta ??
-      (start != null && end != null ? end - start : undefined);
-
-    const hasApp =
-      s.appLinked ||
-      s.appDeviceMake ||
-      s.appDeviceModel ||
-      start != null ||
-      end != null ||
-      delta != null;
-
-    if (!hasApp) return "—";
-
-    const label =
-      delta != null
-        ? `App (${delta > 0 ? "+" : ""}${delta}% )`
-        : "App";
-
-    return <Chip label={label} size="small" color="primary" />;
-  }
-
-  function renderInteractionAppCell(i: InteractionRow) {
-    const hasApp =
-      i.appLinked ||
-      i.appDeviceMake ||
-      i.appDeviceModel ||
-      i.appBatteryStartLevel != null ||
-      i.appSource ||
-      i.appDeviceIdHash;
-
-    if (!hasApp) return "—";
-
-    return <Chip label="App" size="small" color="primary" />;
-  }
-
   // ---------- simple guards ----------
   if (!id) {
     return (
-      <MainLayout>
-        <Box sx={{ mt: 3 }}>
-          <Typography variant="h4" gutterBottom>
-            Unit
-          </Typography>
-          <Typography color="error">No unit ID</Typography>
-        </Box>
-      </MainLayout>
+      <>
+        <div className="space-y-4">
+          <h1 className="text-3xl font-bold tracking-tight">Unit</h1>
+          <div className="rounded-md bg-destructive/10 p-4">
+            <p className="text-sm text-destructive">No unit ID</p>
+          </div>
+        </div>
+      </>
     );
   }
 
   if (loadingUnit) {
     return (
-      <MainLayout>
-        <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
-          <CircularProgress />
-        </Box>
-      </MainLayout>
+      <>
+        <div className="flex justify-center py-8">
+          <PulseLoader size={8} pulseCount={4} speed={1.5} />
+        </div>
+      </>
     );
   }
 
   if (unitError || !unit) {
     return (
-      <MainLayout>
-        <Box sx={{ mt: 3 }}>
-          <Typography variant="h4" gutterBottom>
-            Unit
-          </Typography>
-          <Typography color="error">
-            {unitError ?? "Unit not found"}
-          </Typography>
-        </Box>
-      </MainLayout>
+      <>
+        <div className="space-y-4">
+          <h1 className="text-3xl font-bold tracking-tight">Unit</h1>
+          <div className="rounded-md bg-destructive/10 p-4">
+            <p className="text-sm text-destructive">
+              {unitError ?? "Unit not found"}
+            </p>
+          </div>
+        </div>
+      </>
     );
   }
 
-  // ---------- drawer render helpers ----------
-  const renderSessionDrawer = (session: SessionRow) => {
-    const hasApp =
-      session.appLinked ||
-      session.appBatteryDelta != null ||
-      session.appDeviceMake ||
-      session.appDeviceModel;
-
-    const startLevel = session.appBatteryStartLevel;
-    const endLevel = session.appBatteryEndLevel;
-    const delta =
-      session.appBatteryDelta ??
-      (startLevel != null && endLevel != null
-        ? endLevel - startLevel
-        : undefined);
-
-    return (
-      <Box sx={{ p: 3, width: "100%", boxSizing: "border-box" }}>
-        <Typography variant="h6" gutterBottom>
-          Session details
-        </Typography>
-
-        <Grid container spacing={2} sx={{ mb: 2 }}>
-          {/* Summary card */}
-          <Grid item xs={12} md={6}>
-            <Card>
-              <CardContent>
-                <Typography variant="subtitle1" gutterBottom>
-                  Summary
-                </Typography>
-
-                <Box sx={{ mb: 1 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Status
-                  </Typography>
-                  <Typography variant="body1">
-                    {session.status ?? "—"}
-                  </Typography>
-                </Box>
-
-                <Box sx={{ mb: 1 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Started
-                  </Typography>
-                  <Typography variant="body1">
-                    {formatDateTime(session.start)}
-                  </Typography>
-                </Box>
-
-                <Box sx={{ mb: 1 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Ended
-                  </Typography>
-                  <Typography variant="body1">
-                    {formatDateTime(session.end)}
-                  </Typography>
-                </Box>
-
-                <Box sx={{ mb: 1 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Duration
-                  </Typography>
-                  <Typography variant="body1">
-                    {session.durationMinutes != null
-                      ? `${session.durationMinutes.toFixed(0)} min`
-                      : "—"}
-                  </Typography>
-                </Box>
-
-                <Box sx={{ mb: 1 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Mode / device
-                  </Typography>
-                  <Typography variant="body1">
-                    {(session.mode ?? "—") +
-                      " · " +
-                      (session.deviceType ?? "—")}
-                  </Typography>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          {/* App summary card */}
-          <Grid item xs={12} md={6}>
-            <Card>
-              <CardContent>
-                <Typography variant="subtitle1" gutterBottom>
-                  App summary
-                </Typography>
-
-                <Box sx={{ mb: 1 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    App linked
-                  </Typography>
-                  <Typography variant="body1">
-                    {session.appLinked ? "Yes" : "No"}
-                  </Typography>
-                </Box>
-
-                <Box sx={{ mb: 1 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Device
-                  </Typography>
-                  <Typography variant="body1">
-                    {session.appDeviceMake || session.appDeviceModel
-                      ? `${session.appDeviceMake ?? ""}${
-                          session.appDeviceMake && session.appDeviceModel
-                            ? " "
-                            : ""
-                        }${session.appDeviceModel ?? ""}`
-                      : "—"}
-                  </Typography>
-                </Box>
-
-                <Box sx={{ mb: 1 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    App location
-                  </Typography>
-                  <Typography variant="body1">
-                    {session.appLocationId ?? "—"}
-                  </Typography>
-                </Box>
-
-                <Box sx={{ mb: 1 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Battery change
-                  </Typography>
-                  <Typography variant="body1">
-                    {startLevel != null && endLevel != null ? (
-                      <>
-                        {startLevel}% → {endLevel}%{" "}
-                        {delta != null && `(${delta > 0 ? "+" : ""}${delta}%)`}
-                      </>
-                    ) : delta != null ? (
-                      `${delta > 0 ? "+" : ""}${delta}%`
-                    ) : (
-                      "—"
-                    )}
-                  </Typography>
-                </Box>
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
-
-        <Divider sx={{ my: 2 }} />
-
-        <Typography variant="subtitle1" gutterBottom>
-          App charging events
-        </Typography>
-
-        {drawerLoading && (
-          <Box sx={{ display: "flex", justifyContent: "center", my: 2 }}>
-            <CircularProgress size={20} />
-          </Box>
-        )}
-
-        {drawerError && (
-          <Typography color="error" sx={{ mb: 1 }}>
-            {drawerError}
-          </Typography>
-        )}
-
-        {!drawerLoading && !drawerError && !hasApp && sessionAppEvents.length === 0 && (
-          <Typography variant="body2" color="text.secondary">
-            No app data recorded for this session.
-          </Typography>
-        )}
-
-        {!drawerLoading && !drawerError && sessionAppEvents.length > 0 && (
-          <TableContainer
-            component={Paper}
-            sx={{
-              borderRadius: 2,
-              border: "1px solid",
-              borderColor: "divider",
-              mt: 1,
-            }}
-          >
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Time</TableCell>
-                  <TableCell>Battery</TableCell>
-                  <TableCell>Wireless</TableCell>
-                  <TableCell>Plugged type</TableCell>
-                  <TableCell>Device</TableCell>
-                  <TableCell>Location (app)</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {sessionAppEvents.map((e) => (
-                  <TableRow key={e.id}>
-                    <TableCell>{formatDateTime(e.time)}</TableCell>
-                    <TableCell>
-                      {e.batteryLevel != null ? `${e.batteryLevel}%` : "—"}
-                      {e.batteryDelta != null &&
-                        ` (${e.batteryDelta > 0 ? "+" : ""}${
-                          e.batteryDelta
-                        }%)`}
-                    </TableCell>
-                    <TableCell>{e.isWireless ? "Yes" : "No"}</TableCell>
-                    <TableCell>{e.pluggedType ?? "—"}</TableCell>
-                    <TableCell>
-                      {e.deviceMake || e.deviceModel
-                        ? `${e.deviceMake ?? ""}${
-                            e.deviceMake && e.deviceModel ? " " : ""
-                          }${e.deviceModel ?? ""}`
-                        : "—"}
-                    </TableCell>
-                    <TableCell>{e.locationId ?? "—"}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
-      </Box>
-    );
-  };
-
-  const renderInteractionDrawer = (interaction: InteractionRow) => (
-    <Box sx={{ p: 3, width: "100%", boxSizing: "border-box" }}>
-      <Typography variant="h6" gutterBottom>
-        Interaction details
-      </Typography>
-
-      <Grid container spacing={2}>
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="subtitle1" gutterBottom>
-                Summary
-              </Typography>
-
-              <Box sx={{ mb: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Time
-                </Typography>
-                <Typography variant="body1">
-                  {formatDateTime(interaction.time)}
-                </Typography>
-              </Box>
-
-              <Box sx={{ mb: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Type
-                </Typography>
-                <Typography variant="body1">
-                  {interaction.type ?? "—"}
-                </Typography>
-              </Box>
-
-              <Box sx={{ mb: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Mode / device
-                </Typography>
-                <Typography variant="body1">
-                  {(interaction.mode ?? "—") +
-                    " · " +
-                    (interaction.deviceType ?? "—")}
-                </Typography>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} md={6}>
-          <Card>
-            <CardContent>
-              <Typography variant="subtitle1" gutterBottom>
-                App details
-              </Typography>
-
-              <Box sx={{ mb: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  App linked
-                </Typography>
-                <Typography variant="body1">
-                  {interaction.appLinked ? "Yes" : "No"}
-                </Typography>
-              </Box>
-
-              <Box sx={{ mb: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Device
-                </Typography>
-                <Typography variant="body1">
-                  {interaction.appDeviceMake || interaction.appDeviceModel
-                    ? `${interaction.appDeviceMake ?? ""}${
-                        interaction.appDeviceMake && interaction.appDeviceModel
-                          ? " "
-                          : ""
-                      }${interaction.appDeviceModel ?? ""}`
-                    : "—"}
-                </Typography>
-              </Box>
-
-              <Box sx={{ mb: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  App battery level
-                </Typography>
-                <Typography variant="body1">
-                  {interaction.appBatteryStartLevel != null
-                    ? `${interaction.appBatteryStartLevel}%`
-                    : "—"}
-                </Typography>
-              </Box>
-
-              <Box sx={{ mb: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  App source
-                </Typography>
-                <Typography variant="body1">
-                  {interaction.appSource ?? "—"}
-                </Typography>
-              </Box>
-
-              <Box>
-                <Typography variant="body2" color="text.secondary">
-                  Device hash
-                </Typography>
-                <Typography
-                  variant="body2"
-                  sx={{ fontFamily: "monospace", wordBreak: "break-all" }}
-                >
-                  {interaction.appDeviceIdHash ?? "—"}
-                </Typography>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-    </Box>
-  );
-
   // ---------- main UI ----------
   return (
-    <MainLayout>
-      {/* Header */}
-      <Box
-        sx={{
-          mb: 3,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 2,
-          flexWrap: "wrap",
-        }}
-      >
-        <Stack direction="row" spacing={1} alignItems="center">
-          <Button
-            startIcon={<ArrowBackIcon />}
-            size="small"
-            onClick={() => navigate(-1)}
-          >
-            Back
-          </Button>
-          <Typography variant="h4">{unit.name}</Typography>
-          {unit.status && (
-            <Chip
-              label={unit.status}
-              size="small"
-              color={
-                unit.status === "online"
-                  ? "success"
-                  : unit.status === "offline"
-                  ? "default"
-                  : "warning"
-              }
-            />
-          )}
-          {unit.inUse && <Chip label="In use" size="small" color="info" />}
-          {unit.needsMaintenance && (
-            <Chip label="Needs maintenance" size="small" color="warning" />
-          )}
-        </Stack>
+    <>
+    <PageHeader
+      title="Unit"
+      breadcrumbs={[
+        { label: "Units", href: "/units" },
+        { label: unit.name },
+      ]}
+    />
 
-        {unit.locationId && (
-          <Chip label={unit.locationId} variant="outlined" />
-        )}
-      </Box>
+    
 
-      {/* Info cards */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
-        {/* Summary */}
-        <Grid item xs={12} md={3}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Summary
-              </Typography>
+    
+    <div className="space-y-6">
+        {/* Header */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-3 flex-wrap">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate(-1)}
+              className="gap-2"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </Button>
+            <h1 className="text-3xl font-bold tracking-tight">{unit.name}</h1>
+            {unit.status && (
+              <Badge
+                variant={
+                  unit.status === "online"
+                    ? "default"
+                    : unit.status === "offline"
+                    ? "secondary"
+                    : "outline"
+                }
+              >
+                {unit.status}
+              </Badge>
+            )}
+            {unit.inUse && <Badge variant="outline">In use</Badge>}
+            {unit.needsMaintenance && (
+              <Badge variant="destructive">Needs maintenance</Badge>
+            )}
+          </div>
 
-              <Box sx={{ mb: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Location
-                </Typography>
-                <Typography variant="body1">
-                  {unit.locationId ?? "—"}
-                </Typography>
-              </Box>
+          {unit.locationId && <Badge variant="outline">{unit.locationId}</Badge>}
+        </div>
 
-              <Box sx={{ mb: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Position
-                </Typography>
-                <Typography variant="body1">
-                  {unit.position ?? "—"}
-                </Typography>
-              </Box>
-
-              <Box sx={{ mb: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Particle device ID
-                </Typography>
-                <Typography variant="body1">
-                  {unit.particleDeviceId ?? "—"}
-                </Typography>
-              </Box>
-
-              <Box sx={{ mt: 2, mb: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Current mode
-                </Typography>
-                <Typography variant="body1">
-                  {unit.currentMode ?? "—"}
-                </Typography>
-              </Box>
-
-              <Box>
-                <Typography variant="body2" color="text.secondary">
-                  Current device type
-                </Typography>
-                <Typography variant="body1">
-                  {unit.currentDeviceType ?? "—"}
-                </Typography>
-              </Box>
+        {/* Info cards */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          {/* Summary */}
+          <Card className="shadow-none">
+            <CardHeader>
+              <CardTitle className="text-base">Summary</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <InfoItem label="Location" value={unit.locationId ?? "—"} />
+              <InfoItem label="Position" value={unit.position ?? "—"} />
+              <InfoItem
+                label="Particle device ID"
+                value={unit.particleDeviceId ?? "—"}
+              />
+              <InfoItem label="Current mode" value={unit.currentMode ?? "—"} />
+              <InfoItem
+                label="Current device type"
+                value={unit.currentDeviceType ?? "—"}
+              />
             </CardContent>
           </Card>
-        </Grid>
 
-        {/* Health */}
-        <Grid item xs={12} md={3}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Health
-              </Typography>
-
-              <Box sx={{ mb: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Status
-                </Typography>
-                <Typography variant="body1">
-                  {unit.healthStatus ?? "—"}
-                </Typography>
-              </Box>
-
-              <Box sx={{ mb: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Needs maintenance
-                </Typography>
-                <Typography variant="body1">
-                  {unit.needsMaintenance ? "Yes" : "No"}
-                </Typography>
-              </Box>
-
-              <Box sx={{ mb: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Last calculated
-                </Typography>
-                <Typography variant="body1">
-                  {formatDate(
-                    tsToDate((unit.metrics as any)?.calculatedAt)
-                  )}
-                </Typography>
-              </Box>
+          {/* Health */}
+          <Card className="shadow-none">
+            <CardHeader>
+              <CardTitle className="text-base">Health</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <InfoItem label="Status" value={unit.healthStatus ?? "—"} />
+              <InfoItem
+                label="Needs maintenance"
+                value={unit.needsMaintenance ? "Yes" : "No"}
+              />
+              <InfoItem
+                label="Last calculated"
+                value={formatDate(
+                  tsToDate((unit.metrics as any)?.calculatedAt)
+                )}
+              />
             </CardContent>
           </Card>
-        </Grid>
 
-        {/* Recent activity */}
-        <Grid item xs={12} md={3}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Recent activity
-              </Typography>
+          {/* Recent activity */}
+          <Card className="shadow-none">
+            <CardHeader>
+              <CardTitle className="text-base">Recent activity</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Last heartbeat</p>
+                <p className="text-sm">{formatDateTime(unit.lastHeartbeat)}</p>
+              </div>
 
-              <Box sx={{ mb: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Last heartbeat
-                </Typography>
-                <Typography variant="body1">
-                  {formatDateTime(unit.lastHeartbeat)}
-                </Typography>
-              </Box>
-
-              <Box sx={{ mb: 1 }}>
-                <Typography variant="body2" color="text.secondary">
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">
                   Last interaction
-                </Typography>
-                <Typography variant="body1">
+                </p>
+                <p className="text-sm">
                   {formatDateTime(unit.lastInteraction)}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
+                </p>
+                <p className="text-xs text-muted-foreground">
                   {(unit.lastInteractionType ?? "—") +
                     " · " +
                     (unit.lastInteractionMode ?? "—") +
                     " · " +
                     (unit.lastInteractionDeviceType ?? "—")}
-                </Typography>
-              </Box>
+                </p>
+              </div>
 
-              <Box>
-                <Typography variant="body2" color="text.secondary">
-                  Last session
-                </Typography>
-                <Typography variant="body1">
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Last session</p>
+                <p className="text-sm">
                   {formatDateTime(unit.lastSessionTimestamp)}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
+                </p>
+                <p className="text-xs text-muted-foreground">
                   {(unit.lastSessionDuration != null
                     ? `${unit.lastSessionDuration.toFixed(0)} min`
                     : "—") +
@@ -1083,210 +653,63 @@ export function UnitDetailPage() {
                     (unit.lastSessionMode ?? "—") +
                     " · " +
                     (unit.lastSessionDeviceType ?? "—")}
-                </Typography>
-              </Box>
+                </p>
+              </div>
             </CardContent>
           </Card>
-        </Grid>
 
-        {/* Metrics */}
-        <Grid item xs={12} md={3}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" gutterBottom>
-                Metrics
-              </Typography>
-
-              <Box sx={{ mb: 1 }}>
-                <Typography variant="body2" color="text.secondary">
+          {/* Metrics */}
+          <Card className="shadow-none bg-accent border-0">
+            <CardHeader>
+              <CardTitle className="text-base">Metrics</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">
                   Total interactions
-                </Typography>
-                <Typography variant="h4">
+                </p>
+                <p className="text-3xl font-bold">
                   {unit.totalInteractions ?? "—"}
-                </Typography>
-              </Box>
+                </p>
+              </div>
 
-              <Box>
-                <Typography variant="body2" color="text.secondary">
-                  Total sessions
-                </Typography>
-                <Typography variant="h4">
+              <div className="space-y-1">
+                <p className="text-sm text-muted-foreground">Total sessions</p>
+                <p className="text-3xl font-bold">
                   {unit.totalSessions ?? "—"}
-                </Typography>
-              </Box>
+                </p>
+              </div>
             </CardContent>
           </Card>
-        </Grid>
-      </Grid>
+        </div>
 
-      {/* Last 10 sessions */}
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Last 10 sessions
-        </Typography>
+        {/* Sessions Table */}
+        <SessionsTable
+          sessions={sessions}
+          onSessionClick={handleSessionRowClick}
+          loading={sessionsLoading}
+          error={sessionsError}
+        />
 
-        {sessionsLoading && (
-          <Box sx={{ display: "flex", justifyContent: "center", my: 2 }}>
-            <CircularProgress size={24} />
-          </Box>
-        )}
+        {/* Interactions Table */}
+        <InteractionsTable
+          interactions={interactions}
+          onInteractionClick={handleInteractionRowClick}
+          loading={interactionsLoading}
+          error={interactionsError}
+        />
 
-        {sessionsError && (
-          <Typography color="error" sx={{ mb: 1 }}>
-            {sessionsError}
-          </Typography>
-        )}
-
-        {!sessionsLoading && !sessionsError && (
-          <TableContainer
-            component={Paper}
-            sx={{
-              borderRadius: 2,
-              border: "1px solid",
-              borderColor: "divider",
-            }}
-          >
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Start</TableCell>
-                  <TableCell>End</TableCell>
-                  <TableCell>App</TableCell>
-                  <TableCell>Mode</TableCell>
-                  <TableCell>Device type</TableCell>
-                  <TableCell>Status</TableCell>
-                  <TableCell align="right">Duration (min)</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {sessions.map((s) => (
-                  <TableRow
-                    key={s.id}
-                    hover
-                    sx={{ cursor: "pointer" }}
-                    onClick={() => handleSessionRowClick(s)}
-                  >
-                    <TableCell>{formatDateTime(s.start)}</TableCell>
-                    <TableCell>{formatDateTime(s.end)}</TableCell>
-                    <TableCell>{renderSessionAppCell(s)}</TableCell>
-                    <TableCell>{s.mode ?? "—"}</TableCell>
-                    <TableCell>{s.deviceType ?? "—"}</TableCell>
-                    <TableCell>{s.status ?? "—"}</TableCell>
-                    <TableCell align="right">
-                      {s.durationMinutes != null
-                        ? s.durationMinutes.toFixed(0)
-                        : "—"}
-                    </TableCell>
-                  </TableRow>
-                ))}
-
-                {sessions.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={7}>
-                      <Typography
-                        align="center"
-                        variant="body2"
-                        sx={{ py: 2 }}
-                        color="text.secondary"
-                      >
-                        No sessions found for this unit.
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
-      </Box>
-
-      {/* Last 10 interactions */}
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Last 10 interactions
-        </Typography>
-
-        {interactionsLoading && (
-          <Box sx={{ display: "flex", justifyContent: "center", my: 2 }}>
-            <CircularProgress size={24} />
-          </Box>
-        )}
-
-        {interactionsError && (
-          <Typography color="error" sx={{ mb: 1 }}>
-            {interactionsError}
-          </Typography>
-        )}
-
-        {!interactionsLoading && !interactionsError && (
-          <TableContainer
-            component={Paper}
-            sx={{
-              borderRadius: 2,
-              border: "1px solid",
-              borderColor: "divider",
-            }}
-          >
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Time</TableCell>
-                  <TableCell>Type</TableCell>
-                  <TableCell>Mode</TableCell>
-                  <TableCell>Device type</TableCell>
-                  <TableCell>App</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {interactions.map((i) => (
-                  <TableRow
-                    key={i.id}
-                    hover
-                    sx={{ cursor: "pointer" }}
-                    onClick={() => handleInteractionRowClick(i)}
-                  >
-                    <TableCell>{formatDateTime(i.time)}</TableCell>
-                    <TableCell>{i.type ?? "—"}</TableCell>
-                    <TableCell>{i.mode ?? "—"}</TableCell>
-                    <TableCell>{i.deviceType ?? "—"}</TableCell>
-                    <TableCell>{renderInteractionAppCell(i)}</TableCell>
-                  </TableRow>
-                ))}
-
-                {interactions.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={5}>
-                      <Typography
-                        align="center"
-                        variant="body2"
-                        sx={{ py: 2 }}
-                        color="text.secondary"
-                      >
-                        No interactions recorded yet for this unit.
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        )}
-      </Box>
-
-      {/* Right-hand details drawer */}
-      <Drawer
-        anchor="right"
-        open={drawerOpen}
-        onClose={closeDrawer}
-        PaperProps={{
-          sx: { width: { xs: "100%", sm: 520, md: 640, lg: 720 } },
-        }}
-      >
-        {selectedSession && renderSessionDrawer(selectedSession)}
-        {!selectedSession &&
-          selectedInteraction &&
-          renderInteractionDrawer(selectedInteraction)}
-      </Drawer>
-    </MainLayout>
+        {/* Details Drawer */}
+        <UnitDetailsDrawer
+          open={drawerOpen}
+          onOpenChange={(open) => !open && closeDrawer()}
+          selectedSession={selectedSession}
+          selectedInteraction={selectedInteraction}
+          sessionAppEvents={sessionAppEvents}
+          loading={drawerLoading}
+          error={drawerError}
+        />
+      </div>
+    </>
   );
 }

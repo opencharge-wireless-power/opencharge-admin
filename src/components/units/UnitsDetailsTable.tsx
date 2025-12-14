@@ -50,7 +50,7 @@ export interface UnitDetail {
   name: string;
   locationId?: string;
   position?: string;
-  status?: "online" | "offline" | "warning";
+  status?: string; // "online" | "offline" | "warning";
   healthStatus?: string;
   needsMaintenance: boolean;
   inUse: boolean;
