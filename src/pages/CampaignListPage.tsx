@@ -337,6 +337,7 @@ export function CampaignListPage() {
         title="Campaigns"
         breadcrumbs={[{ label: "Campaigns", href: "/campaigns" }]}
       />
+      
 
       <div className="flex flex-1 items-center justify-center p-4">
         <div className="flex items-center gap-2">
@@ -349,6 +350,7 @@ export function CampaignListPage() {
     );
   }
 
+
   if (error) {
     return (
       <>
@@ -356,7 +358,7 @@ export function CampaignListPage() {
           title="Campaigns"
           breadcrumbs={[{ label: "Campaigns", href: "/campaigns" }]}
         />
-        <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
+        <div className="">
           <div className="p-4 bg-red-50 border border-red-200 rounded-md text-red-800">
             {error}
           </div>
@@ -374,7 +376,8 @@ export function CampaignListPage() {
       />
 
 
-      <div className="flex flex-1 flex-col gap-4 p-4 pt-0 pl-64">
+      
+      <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
 
         {/* Header section */}
         <div className="flex justify-between items-center">

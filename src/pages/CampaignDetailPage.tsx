@@ -22,44 +22,38 @@ import {
   type FormEvent,
 } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
-  Box,
-  Typography,
-  CircularProgress,
-  Chip,
   Card,
   CardContent,
-  Grid,
-  Stack,
-  Button,
-  Divider,
-  Table,
-  TableHead,
-  TableBody,
-  TableRow,
-  TableCell,
-  TableContainer,
-  Paper,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { PulseLoader } from "@/components/common/loading/pulse-loader";
+import { RecentEngagementsTable } from "@/components/campaigns/RecentEngagementTable";
+import { ArrowLeft, Edit } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+import {
   Dialog,
-  DialogTitle,
   DialogContent,
-  DialogActions,
-  TextField,
-  FormControlLabel,
-  Switch,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  Checkbox,
-} from "@mui/material";
-import ArrowBackIcon from "@mui/icons-material/ArrowBack";
-import EditIcon from "@mui/icons-material/Edit";
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
+
 import { QRCodeSVG } from "qrcode.react";
 
 import { db } from "../firebase";
 import { MainLayout } from "../components/layout/MainLayout";
+import { PageHeader } from "@/components/layout/PageHeader";
 
 const DEFAULT_BRAND_ID = "starbucks"; // fallback for legacy /campaigns/:id route
 
@@ -226,6 +220,23 @@ function computeOsBreakdown(events: EngagementEvent[]): OsStat[] {
       count,
       percent: Math.round((count / total) * 100),
     }));
+}
+
+export function InfoItem({
+  label,
+  value,
+  className,
+}: {
+  label: string
+  value: React.ReactNode
+  className?: string
+}) {
+  return (
+    <div className={cn("flex flex-col gap-0.5", className)}>
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <span className="truncate font-medium">{value}</span>
+    </div>
+  )
 }
 
 export function CampaignDetailPage() {
@@ -887,43 +898,41 @@ const syncStoreCampaignDocs = async (
   };
 
   // --------- Render guards ----------
-  if (!effectiveBrandId || !effectiveCampaignId) {
-    return (
-      <MainLayout>
-        <Box sx={{ mt: 3 }}>
-          <Typography variant="h4" gutterBottom>
-            Campaign
-          </Typography>
-          <Typography color="error">No campaign ID</Typography>
-        </Box>
-      </MainLayout>
-    );
-  }
 
-  if (loading && !isCreateMode) {
-    return (
-      <MainLayout>
-        <Box sx={{ display: "flex", justifyContent: "center", mt: 4 }}>
-          <CircularProgress />
-        </Box>
-      </MainLayout>
-    );
-  }
+    if (!effectiveBrandId || !effectiveCampaignId) {
+      return (
+        <MainLayout>
+          <div className="mt-6 space-y-2">
+            <h1 className="text-2xl font-bold tracking-tight">Campaign</h1>
+            <p className="text-sm text-destructive">No campaign ID</p>
+          </div>
+        </MainLayout>
+      );
+    }
 
-  if (!isCreateMode && (error || !campaign)) {
-    return (
-      <MainLayout>
-        <Box sx={{ mt: 3 }}>
-          <Typography variant="h4" gutterBottom>
-            Campaign
-          </Typography>
-          <Typography color="error">
-            {error ?? "Campaign not found"}
-          </Typography>
-        </Box>
-      </MainLayout>
-    );
-  }
+    if (loading && !isCreateMode) {
+      return (
+        <MainLayout>
+          <div className="flex justify-center mt-10">
+            <PulseLoader size={8} pulseCount={4} speed={1.5} />
+          </div>
+        </MainLayout>
+      );
+    }
+
+    if (!isCreateMode && (error || !campaign)) {
+      return (
+        <MainLayout>
+          <div className="mt-6 space-y-2">
+            <h1 className="text-2xl font-bold tracking-tight">Campaign</h1>
+            <p className="text-sm text-destructive">
+              {error ?? "Campaign not found"}
+            </p>
+          </div>
+        </MainLayout>
+      );
+    }
+
 
   // --------- Main UI ----------
   const displayCampaign = campaign ?? {
@@ -939,519 +948,404 @@ const syncStoreCampaignDocs = async (
   const osStats = computeOsBreakdown(events);
 
   return (
-    <MainLayout>
+    <>
+      <PageHeader
+        title="Campaign"
+        breadcrumbs={[
+          { label: "Campaigns", href: "/campaigns" },
+          { label: displayCampaign.name },
+        ]}
+      />
+      <div className="space-y-6">
       {/* Header */}
-      <Box
-        sx={{
-          mb: 3,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 2,
-          flexWrap: "wrap",
-        }}
-      >
-        <Stack direction="row" spacing={1} alignItems="center">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        {/* Left */}
+        <div className="flex items-center gap-3 flex-wrap">
           <Button
-            startIcon={<ArrowBackIcon />}
-            size="small"
+            variant="ghost"
+            size="sm"
             onClick={() => navigate(-1)}
+            className="gap-2"
           >
+            <ArrowLeft className="h-4 w-4" />
             Back
           </Button>
-          <Typography variant="h4">
-            {isCreateMode ? "New campaign" : displayCampaign.name}
-          </Typography>
-          {!isCreateMode && (
-            <Chip
-              label={displayCampaign.active ? "Active" : "Inactive"}
-              size="small"
-              color={displayCampaign.active ? "success" : "default"}
-            />
-          )}
-        </Stack>
 
-        <Stack direction="row" spacing={1} alignItems="center">
-          <Chip
-            label={`Brand: ${displayCampaign.brandId}`}
-            size="small"
-            variant="outlined"
-          />
+          <h1 className="text-3xl font-bold tracking-tight">
+            {isCreateMode ? "New campaign" : displayCampaign.name}
+          </h1>
+
+          {!isCreateMode && (
+            <Badge
+              variant={displayCampaign.active ? "default" : "secondary"}
+            >
+              {displayCampaign.active ? "Active" : "Inactive"}
+            </Badge>
+          )}
+        </div>
+
+        {/* Right */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Badge variant="outline">
+            Brand: {displayCampaign.brandId}
+          </Badge>
+
           <Button
-            variant="outlined"
-            startIcon={<EditIcon />}
+            variant="outline"
+            size="sm"
             onClick={openEditDialog}
+            className="gap-2"
           >
+            <Edit className="h-4 w-4" />
             {isCreateMode ? "Create campaign" : "Edit campaign"}
           </Button>
-        </Stack>
-      </Box>
-
+        </div>
+      </div>
       {/* Info + summary */}
       {!isCreateMode && (
-        <Grid container spacing={2} sx={{ mb: 3 }}>
-          {/* Campaign info card */}
-          <Grid item xs={12} md={6}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  Campaign info
-                </Typography>
-                <Box sx={{ mb: 1 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Brand
-                  </Typography>
-                  <Typography variant="body1">
-                    {displayCampaign.brandId}
-                  </Typography>
-                </Box>
-
-                <Box sx={{ mb: 1 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Description
-                  </Typography>
-                  <Typography variant="body1">
-                    {displayCampaign.description || "—"}
-                  </Typography>
-                </Box>
-
-                <Box sx={{ mb: 1 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Locations (IDs)
-                  </Typography>
-                  <Typography variant="body1">
-                    {displayCampaign.locationIds.length > 0
-                      ? displayCampaign.locationIds.join(", ")
-                      : "—"}
-                  </Typography>
-                </Box>
-
-                <Divider sx={{ my: 1.5 }} />
-
-                <Box sx={{ mb: 1 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Short URL (legacy)
-                  </Typography>
-                  <Typography variant="body1">
-                    {displayCampaign.url || "—"}
-                  </Typography>
-                </Box>
-
-                <Box sx={{ mb: 1 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Target URL
-                  </Typography>
-                  <Typography variant="body1">
-                    {displayCampaign.targetUrl || "—"}
-                  </Typography>
-                </Box>
-
-                <Divider sx={{ my: 1.5 }} />
-
-                <Grid container spacing={1}>
-                  <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary">
-                      Created
-                    </Typography>
-                    <Typography variant="body1">
-                      {formatDate(displayCampaign.createdAt)}
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <Typography variant="body2" color="text.secondary">
-                      Last updated
-                    </Typography>
-                    <Typography variant="body1">
-                      {formatDate(displayCampaign.updatedAt)}
-                    </Typography>
-                  </Grid>
-                </Grid>
-              </CardContent>
-            </Card>
-          </Grid>
-
-          {/* Engagement summary card */}
-          <Grid item xs={12} md={6}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" gutterBottom>
-                  Engagement summary
-                </Typography>
-                <Grid container spacing={2}>
-                  <Grid item xs={6}>
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      gutterBottom
+       <div className="grid gap-4 md:grid-cols-2 mb-6">
+       {/* Campaign info */}
+        <Card className="shadow-none">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium">
+              Campaign info
+            </CardTitle>
+          </CardHeader>
+      
+          <CardContent className="space-y-4 text-sm">
+            <InfoItem
+              label="Brand"
+              value={displayCampaign.brandId}
+            />
+      
+            <InfoItem
+              label="Description"
+              value={displayCampaign.description || "—"}
+            />
+      
+            <InfoItem
+              label="Locations (IDs)"
+              value={
+                displayCampaign.locationIds.length > 0
+                  ? displayCampaign.locationIds.join(", ")
+                  : "—"
+              }
+            />
+      
+            <Separator />
+      
+            <InfoItem
+              label="Short URL (legacy)"
+              value={displayCampaign.url || "—"}
+            />
+      
+            <InfoItem
+              label="Target URL"
+              value={displayCampaign.targetUrl || "—"}
+            />
+      
+            <Separator />
+      
+            <div className="grid grid-cols-2 gap-4">
+              <InfoItem
+                label="Created"
+                value={formatDate(displayCampaign.createdAt)}
+              />
+              <InfoItem
+                label="Last updated"
+                value={formatDate(displayCampaign.updatedAt)}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      
+        {/* Engagement summary */}
+        <Card className="shadow-none">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-medium">
+              Engagement summary
+            </CardTitle>
+          </CardHeader>
+      
+          <CardContent className="space-y-6">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  Stored counter
+                </p>
+                <p className="text-3xl font-bold">
+                  {totalStoreEngagements}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Sum of <code className="px-1 py-0.5 rounded bg-muted">engagements</code>{" "}
+                  across all store campaigns
+                </p>
+              </div>
+      
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  Loaded events
+                </p>
+                <p className="text-3xl font-bold">
+                  {events.length}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Last {events.length} events from{" "}
+                  <code className="px-1 py-0.5 rounded bg-muted">engagements</code>{" "}
+                  sub-collection
+                </p>
+              </div>
+            </div>
+      
+            <Separator />
+      
+            <div className="space-y-2">
+              <p className="text-sm font-medium">
+                OS breakdown (last {events.length} scans)
+              </p>
+      
+              {osStats.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Not enough engagement data yet to show OS distribution.
+                </p>
+              ) : (
+                <div className="space-y-1">
+                  {osStats.map((stat) => (
+                    <div
+                      key={stat.key}
+                      className="flex justify-between text-sm"
                     >
-                      Stored counter
-                    </Typography>
-                    <Typography variant="h4">
-                       {totalStoreEngagements}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Sum of <code>engagements</code> across all store campaigns
-                    </Typography>
-                  </Grid>
-                  <Grid item xs={6}>
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      gutterBottom
-                    >
-                      Loaded events
-                    </Typography>
-                    <Typography variant="h4">{events.length}</Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Last {events.length} events from{" "}
-                      <code>engagements</code> sub-collection
-                    </Typography>
-                  </Grid>
-                </Grid>
-
-                <Divider sx={{ my: 2 }} />
-
-                <Typography variant="subtitle2" gutterBottom>
-                  OS breakdown (last {events.length} scans)
-                </Typography>
-
-                {osStats.length === 0 ? (
-                  <Typography variant="body2" color="text.secondary">
-                    Not enough engagement data yet to show OS distribution.
-                  </Typography>
-                ) : (
-                  <Box sx={{ mt: 0.5 }}>
-                    {osStats.map((stat) => (
-                      <Stack
-                        key={stat.key}
-                        direction="row"
-                        justifyContent="space-between"
-                        sx={{ py: 0.3 }}
-                      >
-                        <Typography variant="body2">
-                          {stat.label}
-                        </Typography>
-                        <Typography variant="body2">
-                          {stat.count} ({stat.percent}%)
-                        </Typography>
-                      </Stack>
-                    ))}
-                  </Box>
-                )}
-              </CardContent>
-            </Card>
-          </Grid>
-        </Grid>
+                      <span>{stat.label}</span>
+                      <span className="text-muted-foreground">
+                        {stat.count} ({stat.percent}%)
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+     </div>
+     
       )}
 
       {/* Locations running this campaign */}
       {!isCreateMode && (
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="h6" gutterBottom>
-            Locations running this campaign
-          </Typography>
-
-          {storeCampaignsLoading && (
-            <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
-              <CircularProgress size={24} />
-            </Box>
-          )}
-
-          {storeCampaignsError && (
-            <Typography color="error" sx={{ mt: 1 }}>
-              {storeCampaignsError}
-            </Typography>
-          )}
-
-          {!storeCampaignsLoading &&
-            !storeCampaignsError &&
-            storeCampaigns.length === 0 && (
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{ mt: 1 }}
-              >
-                No store-level campaign documents found for this campaign yet.
-                New campaigns created or edited with locations will automatically
-                populate this section.
-              </Typography>
-            )}
-
-          {!storeCampaignsLoading &&
-            !storeCampaignsError &&
-            storeCampaigns.length > 0 && (
-              <TableContainer
-                component={Paper}
-                sx={{
-                  mb: 3,
-                  borderRadius: 2,
-                  border: "1px solid",
-                  borderColor: "divider",
-                }}
-              >
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>Location</TableCell>
-                      <TableCell>City</TableCell>
-                      <TableCell>QR link</TableCell>
-                      <TableCell align="center">QR</TableCell>
-                      <TableCell align="right">Engagements</TableCell>
-                      <TableCell>Status</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {storeCampaigns.map((row) => {
-                      const name =
-                        row.locationBrand && row.locationStoreLocation
-                          ? `${row.locationBrand} – ${row.locationStoreLocation}`
-                          : row.locationName ?? row.locationId ?? "—";
-
-                      const qr = row.qrCode;
-
-                      return (
-                        <TableRow key={row.id}>
-                          <TableCell>{name}</TableCell>
-                          <TableCell>
-                            {row.locationCity ?? "—"}
-                          </TableCell>
-                          <TableCell>
-                            {qr ? (
-                              <Typography
-                                variant="caption"
-                                sx={{ wordBreak: "break-all" }}
-                                color="text.secondary"
-                              >
-                                {qr}
-                              </Typography>
-                            ) : (
-                              "—"
-                            )}
-                          </TableCell>
-                          <TableCell align="center">
-                            {qr ? (
-                              <Box
-                                sx={{
-                                  display: "inline-flex",
-                                  p: 0.5,
-                                  borderRadius: 1,
-                                  border: "1px solid",
-                                  borderColor: "divider",
-                                  bgcolor: "background.paper",
-                                }}
-                              >
-                                <QRCodeSVG value={qr} size={64} />
-                              </Box>
-                            ) : (
-                              "—"
-                            )}
-                          </TableCell>
-                          <TableCell align="right">
-                            {row.engagements}
-                          </TableCell>
-                          <TableCell>
-                            <Chip
-                              label={row.active ? "Active" : "Inactive"}
-                              size="small"
-                              color={row.active ? "success" : "default"}
-                            />
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            )}
-        </Box>
+       <div className="mb-6">
+       <h2 className="text-lg font-medium mb-3">
+         Locations running this campaign
+       </h2>
+     
+       {/* Loading */}
+       {storeCampaignsLoading && (
+         <div className="flex justify-center mt-2">
+           <PulseLoader size={8} pulseCount={4} speed={1.5} />
+         </div>
+       )}
+     
+       {/* Error */}
+       {storeCampaignsError && (
+         <p className="text-destructive mt-1">{storeCampaignsError}</p>
+       )}
+     
+       {/* Empty */}
+       {!storeCampaignsLoading &&
+         !storeCampaignsError &&
+         storeCampaigns.length === 0 && (
+           <p className="text-sm text-muted-foreground mt-1">
+             No store-level campaign documents found for this campaign yet.
+             New campaigns created or edited with locations will automatically
+             populate this section.
+           </p>
+         )}
+     
+       {/* Table */}
+       {!storeCampaignsLoading &&
+         !storeCampaignsError &&
+         storeCampaigns.length > 0 && (
+           <div className="overflow-x-auto mt-3">
+             <table className="w-full text-sm border border-divider rounded-lg">
+               <thead className="bg-muted">
+                 <tr>
+                   <th className="p-2 text-left">Location</th>
+                   <th className="p-2 text-left">City</th>
+                   <th className="p-2 text-left">QR link</th>
+                   <th className="p-2 text-center">QR</th>
+                   <th className="p-2 text-right">Engagements</th>
+                   <th className="p-2 text-left">Status</th>
+                 </tr>
+               </thead>
+               <tbody>
+                 {storeCampaigns.map((row) => {
+                   const name =
+                     row.locationBrand && row.locationStoreLocation
+                       ? `${row.locationBrand} – ${row.locationStoreLocation}`
+                       : row.locationName ?? row.locationId ?? "—";
+     
+                   const qr = row.qrCode;
+     
+                   return (
+                     <tr key={row.id} className="border-t border-divider">
+                       <td className="p-2">{name}</td>
+                       <td className="p-2">{row.locationCity ?? "—"}</td>
+                       <td className="p-2 break-words text-muted-foreground">
+                         {qr ?? "—"}
+                       </td>
+                       <td className="p-2 text-center">
+                         {qr ? (
+                           <div className="inline-flex p-1 border border-divider rounded bg-background">
+                             <QRCodeSVG value={qr} size={64} />
+                           </div>
+                         ) : (
+                           "—"
+                         )}
+                       </td>
+                       <td className="p-2 text-right">{row.engagements}</td>
+                       <td className="p-2">
+                         <Badge variant={row.active ? "default" : "outline"} size="sm">
+                           {row.active ? "Active" : "Inactive"}
+                         </Badge>
+                       </td>
+                     </tr>
+                   );
+                 })}
+               </tbody>
+             </table>
+           </div>
+         )}
+       </div>
+     
       )}
 
       {/* Recent engagement events */}
       {!isCreateMode && (
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="h6" gutterBottom>
-            Recent engagement events
-          </Typography>
+        <>
+       
+        <RecentEngagementsTable
+        events={events}
+        loading={eventsLoading}
+        error={eventsError ?? undefined}
+      />
 
-          {eventsLoading && (
-            <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
-              <CircularProgress size={24} />
-            </Box>
-          )}
 
-          {eventsError && (
-            <Typography color="error" sx={{ mt: 1 }}>
-              {eventsError}
-            </Typography>
-          )}
-
-          {!eventsLoading && !eventsError && (
-            <TableContainer
-              component={Paper}
-              sx={{
-                borderRadius: 2,
-                border: "1px solid",
-                borderColor: "divider",
-              }}
-            >
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Time</TableCell>
-                    <TableCell>Device brand</TableCell>
-                    <TableCell>Device name</TableCell>
-                    <TableCell>OS</TableCell>
-                    <TableCell>Type</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {events.map((ev) => (
-                    <TableRow key={ev.id}>
-                      <TableCell>{formatDateTime(ev.createdAt)}</TableCell>
-                      <TableCell>{ev.deviceBrand ?? "—"}</TableCell>
-                      <TableCell>{ev.deviceName ?? "—"}</TableCell>
-                      <TableCell>{ev.deviceOS ?? "—"}</TableCell>
-                      <TableCell>{ev.deviceType ?? "—"}</TableCell>
-                    </TableRow>
-                  ))}
-
-                  {events.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={5}>
-                        <Typography
-                          align="center"
-                          variant="body2"
-                          sx={{ py: 2 }}
-                          color="text.secondary"
-                        >
-                          No engagement events recorded yet.
-                        </Typography>
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          )}
-        </Box>
+        </>
       )}
 
       {/* Edit / Create dialog */}
-      <Dialog
-        open={editOpen}
-        onClose={closeEditDialog}
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle>
-          {isCreateMode ? "Create campaign" : "Edit campaign"}
-        </DialogTitle>
-        <form onSubmit={handleEditSubmit}>
-          <DialogContent sx={{ pt: 1 }}>
+      <Dialog open={editOpen} onOpenChange={closeEditDialog}>
+        <DialogContent className="sm:max-w-lg">
+          <form onSubmit={handleEditSubmit} className="space-y-4">
+            <DialogHeader>
+              <DialogTitle>
+                {isCreateMode ? "Create campaign" : "Edit campaign"}
+              </DialogTitle>
+            </DialogHeader>
+  
             {editForm && (
               <>
-                <TextField
-                  label="Name"
-                  fullWidth
-                  margin="normal"
-                  value={editForm.name}
-                  onChange={handleEditChange("name")}
-                  required
-                />
-                <TextField
-                  label="Description"
-                  fullWidth
-                  margin="normal"
-                  multiline
-                  minRows={2}
-                  value={editForm.description}
-                  onChange={handleEditChange("description")}
-                />
-                <TextField
-                  label="Target URL"
-                  fullWidth
-                  margin="normal"
-                  value={editForm.targetUrl}
-                  onChange={handleEditChange("targetUrl")}
-                />
-                <TextField
-                  label="Short URL (QR - legacy)"
-                  fullWidth
-                  margin="normal"
-                  value={editForm.url}
-                  onChange={handleEditChange("url")}
-                  helperText="Legacy short link; store-level QR URLs now come from locations."
-                />
-
-                <FormControl fullWidth margin="normal" size="small">
-                  <InputLabel id="locations-label">Locations</InputLabel>
-                  <Select
-                    labelId="locations-label"
-                    label="Locations"
-                    multiple
-                    value={editForm.locationIds}
-                    onChange={handleLocationsChange as any}
-                    renderValue={(selected) => {
-                      const ids = selected as string[];
-                      const names = ids
-                        .map(
-                          (id) =>
-                            locations.find((l) => l.id === id)?.name ?? id
-                        )
-                        .join(", ");
-                      return names;
-                    }}
-                  >
-                    {locations.map((loc) => (
-                      <MenuItem key={loc.id} value={loc.id}>
+                {/* Name */}
+                <div className="flex flex-col">
+                  <Label htmlFor="name">Name</Label>
+                  <Input
+                    id="name"
+                    value={editForm.name}
+                    onChange={handleEditChange("name")}
+                    required
+                  />
+                </div>
+  
+                {/* Description */}
+                <div className="flex flex-col">
+                  <Label htmlFor="description">Description</Label>
+                  <Input
+                    id="description"
+                    value={editForm.description}
+                    onChange={handleEditChange("description")}
+                    className="h-20"
+                    multiline
+                  />
+                </div>
+  
+                {/* Target URL */}
+                <div className="flex flex-col">
+                  <Label htmlFor="targetUrl">Target URL</Label>
+                  <Input
+                    id="targetUrl"
+                    value={editForm.targetUrl}
+                    onChange={handleEditChange("targetUrl")}
+                  />
+                </div>
+  
+                {/* Short URL */}
+                <div className="flex flex-col">
+                  <Label htmlFor="url">Short URL (QR - legacy)</Label>
+                  <Input
+                    id="url"
+                    value={editForm.url}
+                    onChange={handleEditChange("url")}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Legacy short link; store-level QR URLs now come from locations.
+                  </p>
+                </div>
+  
+                {/* Locations multi-select */}
+                <div className="flex flex-col">
+                  <Label>Locations</Label>
+                  <div className="grid gap-1 max-h-40 overflow-auto border rounded p-2">
+                    {locations.map((loc: any) => (
+                      <label
+                        key={loc.id}
+                        className="flex items-center gap-2 cursor-pointer"
+                      >
                         <Checkbox
                           checked={editForm.locationIds.includes(loc.id)}
+                          onCheckedChange={() => handleLocationsChange(loc.id)}
                         />
-                        <Typography variant="body2">
+                        <span className="text-sm">
                           {loc.name}
-                          {loc.storeLocation
-                            ? ` – ${loc.storeLocation}`
-                            : ""}
-                        </Typography>
-                      </MenuItem>
+                          {loc.storeLocation ? ` – ${loc.storeLocation}` : ""}
+                        </span>
+                      </label>
                     ))}
-                  </Select>
-                </FormControl>
-
-                <Box sx={{ mt: 1 }}>
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        checked={editForm.active}
-                        onChange={handleEditChange("active")}
-                      />
-                    }
-                    label="Active"
+                  </div>
+                </div>
+  
+                {/* Active switch */}
+                <div className="flex items-center gap-2">
+                  <Switch
+                    checked={editForm.active}
+                    onCheckedChange={handleEditChange("active")}
+                    id="active-switch"
                   />
-                </Box>
-
+                  <Label htmlFor="active-switch">Active</Label>
+                </div>
+  
+                {/* Error */}
                 {editError && (
-                  <Typography color="error" variant="body2" sx={{ mt: 1 }}>
-                    {editError}
-                  </Typography>
+                  <p className="text-sm text-destructive">{editError}</p>
                 )}
+  
+                {/* Actions */}
+                <DialogFooter className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={closeEditDialog} disabled={editSaving}>
+                    Cancel
+                  </Button>
+                  <Button type="submit" disabled={editSaving}>
+                    {editSaving
+                      ? "Saving..."
+                      : isCreateMode
+                      ? "Create campaign"
+                      : "Save changes"}
+                  </Button>
+                </DialogFooter>
               </>
             )}
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={closeEditDialog} disabled={editSaving}>
-              Cancel
-            </Button>
-            <Button type="submit" variant="contained" disabled={editSaving}>
-              {editSaving
-                ? "Saving..."
-                : isCreateMode
-                ? "Create campaign"
-                : "Save changes"}
-            </Button>
-          </DialogActions>
-        </form>
+          </form>
+        </DialogContent>
       </Dialog>
-    </MainLayout>
+      </div>
+    </>
   );
 }
