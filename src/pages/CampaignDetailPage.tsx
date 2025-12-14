@@ -1203,9 +1203,10 @@ const syncStoreCampaignDocs = async (
                        </td>
                        <td className="p-2 text-right">{row.engagements}</td>
                        <td className="p-2">
-                         <Badge variant={row.active ? "default" : "outline"} size="sm">
-                           {row.active ? "Active" : "Inactive"}
-                         </Badge>
+                         <Badge variant={row.active ? "default" : "outline"}>
+                          {row.active ? "Active" : "Inactive"}
+                        </Badge>
+
                        </td>
                      </tr>
                    );
