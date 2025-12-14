@@ -135,6 +135,15 @@ function InfoItem({
   );
 }
 
+function tsOrDateToDate(value: Timestamp | Date | null | undefined): Date | undefined {
+  if (!value) return undefined;
+  if ('toDate' in value && typeof value.toDate === 'function') {
+    return value.toDate(); // it's a Timestamp
+  }
+  return value instanceof Date ? value : undefined; // it's already a Date
+}
+
+
 
 // ----- component -----
 export function UnitDetailPage() {
@@ -606,10 +615,10 @@ export function UnitDetailPage() {
               />
               <InfoItem
                 label="Last calculated"
-                value={formatDate(
-                  tsToDate((unit.metrics as any)?.calculatedAt)
-                )}
+                value={formatDate(tsOrDateToDate(unit.metrics?.calculatedAt))}
               />
+
+
             </CardContent>
           </Card>
 
