@@ -1,4 +1,4 @@
-// src/components/layout/AppSidebar.tsx
+import type { ComponentType } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
   Sidebar,
@@ -14,7 +14,14 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 
-import { CampaignsQ, Units, Promotions, Sessions, Dashboard, LocationsDot } from "@/components/icons/Icons";
+import {
+  CampaignsQ,
+  Units,
+  Promotions,
+  Sessions,
+  Dashboard,
+  LocationsDot,
+} from "@/components/icons/Icons";
 
 import { useAuth } from "@/hooks/useAuth";
 import { NavUser } from "./NavUser";
@@ -23,23 +30,17 @@ import { NavUser } from "./NavUser";
 interface NavItem {
   label: string;
   to: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
   match: (path: string) => boolean;
 }
 
 const navItems: NavItem[] = [
-  {
-    label: "Dashboard",
-    to: "/",
-    icon: Dashboard,
-    match: (path) => path === "/",
-  },
+  { label: "Dashboard", to: "/", icon: Dashboard, match: (path) => path === "/" },
   {
     label: "Locations",
     to: "/locations",
     icon: LocationsDot,
-    match: (path) =>
-      path === "/locations" || path.startsWith("/locations/"),
+    match: (path) => path === "/locations" || path.startsWith("/locations/"),
   },
   {
     label: "Promotions",
@@ -65,9 +66,14 @@ const navItems: NavItem[] = [
     icon: Sessions,
     match: (path) => path.startsWith("/sessions"),
   },
+   {
+    label: "Interactions",
+    to: "/interactions",
+    icon: Sessions,
+    match: (path) => path.startsWith("/interactions"),
+  },
 ];
 
-// ---- Component ---- //
 export function AppSidebar() {
   const { user, role, signOutUser } = useAuth();
   const location = useLocation();
@@ -75,22 +81,23 @@ export function AppSidebar() {
   const handleLogout = () => void signOutUser();
 
   return (
-    <Sidebar collapsible="icon" className="peer">
+    <Sidebar collapsible="icon" className="border-r">
       {/* Brand */}
-      <SidebarHeader className="border-b px-6 py-4">
+      <SidebarHeader className="border-b px-4 py-3">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild size="lg">
               <Link to="/" className="flex items-center gap-2">
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg">
-                  <img 
+                  <img
                     src="/oc-icon.svg"
                     alt="Opencharge"
                     className="size-8"
                   />
-                  
                 </div>
-                {/* <span className="font-bold text-sm truncate">Opencharge</span> */}
+                <span className="truncate text-sm font-semibold">
+                  Opencharge Admin
+                </span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -98,11 +105,9 @@ export function AppSidebar() {
       </SidebarHeader>
 
       {/* Nav Items */}
-      <SidebarContent className="py-4">
+      <SidebarContent className="py-2">
         <SidebarGroup>
-          <SidebarGroupLabel>
-            {/*Navigation*/}
-          </SidebarGroupLabel>
+          <SidebarGroupLabel className="sr-only">Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {navItems.map((item) => {
@@ -112,9 +117,9 @@ export function AppSidebar() {
                 return (
                   <SidebarMenuItem key={item.label}>
                     <SidebarMenuButton asChild isActive={isActive}>
-                      <Link to={item.to}>
-                        <Icon className="h-6 w-6" />
-                        <span className="font-medium text-base">{item.label}</span>
+                      <Link to={item.to} className="flex items-center gap-2">
+                        <Icon className="h-5 w-5" />
+                        <span className="text-sm font-medium">{item.label}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
@@ -125,12 +130,13 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      {/* Footer with NavUser */}
+      {/* Footer */}
       <SidebarFooter className="border-t p-4">
         {user ? (
           <NavUser user={user} role={role} onLogout={handleLogout} />
         ) : null}
       </SidebarFooter>
+
       <SidebarRail />
     </Sidebar>
   );

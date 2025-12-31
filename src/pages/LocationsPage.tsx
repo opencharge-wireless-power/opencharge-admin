@@ -337,7 +337,7 @@ export function LocationsPage() {
         title="Locations"
         breadcrumbs={[{ label: "Locations", href: "/locations" }]}
       />
-     
+      <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">Locations</h1>
@@ -364,7 +364,7 @@ export function LocationsPage() {
           navigate(`/locations/${encodeURIComponent(id)}`)
         }
       />
-
+    </div>
 
       {/* New location dialog */}
       <Dialog open={dialogOpen}

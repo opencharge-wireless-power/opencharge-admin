@@ -540,7 +540,7 @@ export function DashboardPage() {
       />
        <div className="flex flex-1 flex-col gap-4 p-4 pt-0">
          {/*  HEADER SECTION  */}
-         <div className="flex justify-between items-center">
+         <div className="flex items-center justify-between">
           <div>
             <p className="text-muted-foreground">
             High-level overview of Opencharge locations, units, sessions,
@@ -556,7 +556,7 @@ export function DashboardPage() {
         </div>
 
 
-       </div>
+       
 
       {error && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-md text-red-800">
@@ -664,6 +664,7 @@ export function DashboardPage() {
           <RecentSessionsTable sessions={recentSessions} />
         </>
       )}
+      </div>
     </>
   );
 }

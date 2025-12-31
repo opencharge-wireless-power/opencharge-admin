@@ -1,4 +1,3 @@
-// src/components/layout/MainLayout.tsx
 import type { ReactNode } from "react";
 import { SidebarProvider, SidebarInset} from "@/components/ui/sidebar";
 import { AppSidebar } from "./AppSideBar";
@@ -7,15 +6,15 @@ interface MainLayoutProps {
   children: ReactNode;
 }
 
-
 export function MainLayout({ children }: MainLayoutProps) {
   return (
     <SidebarProvider>
       <AppSidebar />
-      <SidebarInset>
-        <div className=" flex flex-1 flex-col p-4 gap-4 pl-22 ">
+     <SidebarInset>
+        {/* Page content */}
+        <main className="flex flex-1 flex-col gap-4 p-4">
           {children}
-        </div>
+        </main>
       </SidebarInset>
     </SidebarProvider>
   );

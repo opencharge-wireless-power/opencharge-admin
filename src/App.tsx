@@ -14,6 +14,7 @@ import { CampaignListPage } from "./pages/CampaignListPage";
 import { CampaignDetailPage } from "./pages/CampaignDetailPage";
 import { UnitsListPage } from "./pages/UnitsListPage";
 import { UnitDetailPage } from "./pages/UnitDetailPage";
+import { InteractionsPage } from "@/pages/InteractionsPage";
 
 export function App() {
   return (
@@ -46,6 +47,7 @@ export function App() {
             />
             <Route path="units" element={<UnitsListPage />} />
             <Route path="units/:id" element={<UnitDetailPage />} />
+            <Route path="/interactions" element={<InteractionsPage />} />
 
             {/* Catch all */}
             <Route path="*" element={<Navigate to="/" replace />} />
