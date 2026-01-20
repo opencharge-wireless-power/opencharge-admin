@@ -1,7 +1,6 @@
-// src/pages/UnitDetailPage.tsx
-import { useEffect, useState } from "react";
-import { Timestamp } from 'firebase/firestore';
-import { useParams, useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react"
+import { Timestamp } from "firebase/firestore"
+import { useParams, useNavigate } from "react-router-dom"
 import {
   collection,
   doc,
@@ -11,111 +10,186 @@ import {
   where,
   limit,
   type DocumentData,
-} from "firebase/firestore";
-import { ArrowLeft } from "lucide-react";
-import { PulseLoader } from "@/components/common/loading/pulse-loader";
-import { PageHeader } from "@/components/layout/PageHeader";
-import { cn } from "@/lib/utils";
+} from "firebase/firestore"
+import { ArrowLeft } from "lucide-react"
+import { PulseLoader } from "@/components/common/loading/pulse-loader"
+import { PageHeader } from "@/components/layout/PageHeader"
+import { cn } from "@/lib/utils"
 
-import { db } from "../firebase";
-import type { Unit, UnitHealth, UnitMetrics, UnitInteractions } from "../types/Opencharge";
+import { db } from "../firebase"
+import type { Unit, UnitHealth, UnitMetrics, UnitInteractions } from "../types/Opencharge"
 
-import { SessionsTable } from "@/components/units/SessionsTable";
-import { InteractionsTable } from "@/components/units/InteractionsTable";
-import { UnitDetailsDrawer } from "@/components/units/UnitDetailsDrawer";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { SessionsTable } from "@/components/units/SessionsTable"
+import { InteractionsTable } from "@/components/units/InteractionsTable"
+import { UnitDetailsDrawer } from "@/components/units/UnitDetailsDrawer"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 // ----- helpers -----
-
 function tsToDate(value: Timestamp | null | undefined): Date | undefined {
-  return value?.toDate();
+  return value?.toDate()
+}
+
+function anyToDate(value: unknown): Date | undefined {
+  if (!value) return undefined
+  if (value instanceof Timestamp) return value.toDate()
+  if (typeof value === "object" && value !== null && "toDate" in value) {
+    const v = value as { toDate?: () => Date }
+    if (typeof v.toDate === "function") return v.toDate()
+  }
+  if (typeof value === "number") return new Date(value)
+  return undefined
+}
+
+function toNumber(value: unknown): number | undefined {
+  if (value === null || value === undefined) return undefined
+  if (typeof value === "number") return value
+  if (typeof value === "string") {
+    const n = Number(value)
+    return Number.isFinite(n) ? n : undefined
+  }
+  return undefined
+}
+
+function toStringOrUndefined(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined
 }
 
 function numOrUndefined(v: unknown): number | undefined {
-  const num = Number(v);
-  return !Number.isNaN(num) ? num : undefined;
+  const num = Number(v)
+  return !Number.isNaN(num) ? num : undefined
 }
 
 function dateFromMs(value: unknown): Date | undefined {
-  const ms = numOrUndefined(value);
-  return ms && ms > 0 ? new Date(ms) : undefined;
+  const ms = numOrUndefined(value)
+  return ms && ms > 0 ? new Date(ms) : undefined
 }
 
 function formatDate(date?: Date): string {
-  if (!date) return "—";
+  if (!date) return "—"
   return date.toLocaleDateString(undefined, {
     year: "numeric",
     month: "short",
     day: "2-digit",
-  });
+  })
 }
 
 function formatDateTime(date?: Date): string {
-  if (!date) return "—";
+  if (!date) return "—"
   return date.toLocaleString(undefined, {
     year: "numeric",
     month: "short",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-  });
+  })
+}
+
+function formatPercent(p?: string) {
+  if (!p) return "—"
+  return p.endsWith("%") ? p : `${p}%`
+}
+
+function ageLabel(date?: Date) {
+  if (!date) return "—"
+  const mins = Math.floor((Date.now() - date.getTime()) / 60000)
+  if (mins < 1) return "just now"
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 48) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  return `${days}d ago`
+}
+
+function tsOrDateToDate(value: Timestamp | Date | null | undefined): Date | undefined {
+  if (!value) return undefined
+  if ("toDate" in value && typeof value.toDate === "function") return value.toDate()
+  return value instanceof Date ? value : undefined
 }
 
 // ----- local types -----
+export type UnitVitals = {
+  timestamp?: Date
+  uptime?: number
+  uptimeHours?: string
+  uptimeDays?: string
+
+  memoryUsagePercent?: string
+  freeMemory?: number
+  freeMemoryKB?: string
+  usedMemory?: number
+  usedMemoryKB?: string
+
+  signalStrength?: number
+  signalQuality?: number
+
+  wifiHealth?: string
+  wifiHealthDescription?: string
+  wifiHealthTooltip?: string
+
+  cloudDisconnects?: number
+  cloudConnects?: number
+  networkDisconnects?: number
+
+  totalPublishes?: number
+  totalQueries?: number
+  rateLimited?: number
+
+  source?: string
+}
+
 interface UnitWithExtras extends Unit {
-  locationId?: string;
-  healthStatus?: string;
-  needsMaintenance?: boolean;
+  locationId?: string
+  healthStatus?: string
+  needsMaintenance?: boolean
+
+  // ✅ new
+  vitals?: UnitVitals
+  vitalsFresh?: boolean
 }
 
 interface SessionRow {
-  id: string;
-  start?: Date;
-  end?: Date;
-  durationMinutes?: number;
-  mode?: string;
-  deviceType?: string;
-  status?: string;
-  appLinked?: boolean;
-  appBatteryDelta?: number;
-  appBatteryStartLevel?: number;
-  appBatteryEndLevel?: number;
-  appDeviceMake?: string;
-  appDeviceModel?: string;
-  appLocationId?: string;
+  id: string
+  start?: Date
+  end?: Date
+  durationMinutes?: number
+  mode?: string
+  deviceType?: string
+  status?: string
+  appLinked?: boolean
+  appBatteryDelta?: number
+  appBatteryStartLevel?: number
+  appBatteryEndLevel?: number
+  appDeviceMake?: string
+  appDeviceModel?: string
+  appLocationId?: string
 }
 
 interface AppChargingEventRow {
-  id: string;
-  time?: Date;
-  batteryLevel?: number;
-  batteryDelta?: number;
-  isWireless?: boolean;
-  pluggedType?: string;
-  deviceMake?: string;
-  deviceModel?: string;
-  locationId?: string;
+  id: string
+  time?: Date
+  batteryLevel?: number
+  batteryDelta?: number
+  isWireless?: boolean
+  pluggedType?: string
+  deviceMake?: string
+  deviceModel?: string
+  locationId?: string
 }
 
 interface InteractionRow {
-  id: string;
-  time?: Date;
-  type?: string;
-  mode?: string;
-  deviceType?: string;
-  appLinked?: boolean;
-  appBatteryStartLevel?: number;
-  appDeviceMake?: string;
-  appDeviceModel?: string;
-  appSource?: string;
-  appDeviceIdHash?: string;
+  id: string
+  time?: Date
+  type?: string
+  mode?: string
+  deviceType?: string
+  appLinked?: boolean
+  appBatteryStartLevel?: number
+  appDeviceMake?: string
+  appDeviceModel?: string
+  appSource?: string
+  appDeviceIdHash?: string
 }
 
 function InfoItem({
@@ -123,8 +197,8 @@ function InfoItem({
   value,
   className,
 }: {
-  label: string;
-  value: React.ReactNode;
+  label: string
+  value: React.ReactNode
   className?: string
 }) {
   return (
@@ -132,107 +206,133 @@ function InfoItem({
       <span className="text-sm text-muted-foreground">{label}</span>
       <span className="text-sm">{value}</span>
     </div>
-  );
+  )
 }
-
-function tsOrDateToDate(value: Timestamp | Date | null | undefined): Date | undefined {
-  if (!value) return undefined;
-  if ('toDate' in value && typeof value.toDate === 'function') {
-    return value.toDate(); // it's a Timestamp
-  }
-  return value instanceof Date ? value : undefined; // it's already a Date
-}
-
-
 
 // ----- component -----
 export function UnitDetailPage() {
-  const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
 
-  const [unit, setUnit] = useState<UnitWithExtras | null>(null);
-  const [loadingUnit, setLoadingUnit] = useState(true);
-  const [unitError, setUnitError] = useState<string | null>(null);
+  const [unit, setUnit] = useState<UnitWithExtras | null>(null)
+  const [loadingUnit, setLoadingUnit] = useState(true)
+  const [unitError, setUnitError] = useState<string | null>(null)
 
-  const [sessions, setSessions] = useState<SessionRow[]>([]);
-  const [sessionsLoading, setSessionsLoading] = useState(false);
-  const [sessionsError, setSessionsError] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<SessionRow[]>([])
+  const [sessionsLoading, setSessionsLoading] = useState(false)
+  const [sessionsError, setSessionsError] = useState<string | null>(null)
 
-  const [interactions, setInteractions] = useState<InteractionRow[]>([]);
-  const [interactionsLoading, setInteractionsLoading] = useState(false);
-  const [interactionsError, setInteractionsError] = useState<string | null>(
-    null
-  );
+  const [interactions, setInteractions] = useState<InteractionRow[]>([])
+  const [interactionsLoading, setInteractionsLoading] = useState(false)
+  const [interactionsError, setInteractionsError] = useState<string | null>(null)
 
   // Drawer state for details
-  const [selectedSession, setSelectedSession] = useState<SessionRow | null>(
-    null
-  );
-  const [selectedInteraction, setSelectedInteraction] =
-    useState<InteractionRow | null>(null);
-  const [sessionAppEvents, setSessionAppEvents] = useState<
-    AppChargingEventRow[]
-  >([]);
-  const [drawerLoading, setDrawerLoading] = useState(false);
-  const [drawerError, setDrawerError] = useState<string | null>(null);
+  const [selectedSession, setSelectedSession] = useState<SessionRow | null>(null)
+  const [selectedInteraction, setSelectedInteraction] = useState<InteractionRow | null>(null)
+  const [sessionAppEvents, setSessionAppEvents] = useState<AppChargingEventRow[]>([])
+  const [drawerLoading, setDrawerLoading] = useState(false)
+  const [drawerError, setDrawerError] = useState<string | null>(null)
 
-  const drawerOpen = Boolean(selectedSession || selectedInteraction);
+  const drawerOpen = Boolean(selectedSession || selectedInteraction)
 
   const closeDrawer = () => {
-    setSelectedSession(null);
-    setSelectedInteraction(null);
-    setSessionAppEvents([]);
-    setDrawerError(null);
-  };
+    setSelectedSession(null)
+    setSelectedInteraction(null)
+    setSessionAppEvents([])
+    setDrawerError(null)
+  }
 
   // -------- load unit ----------
   useEffect(() => {
     const loadUnit = async () => {
       if (!id) {
-        setUnitError("No unit ID");
-        setLoadingUnit(false);
-        return;
+        setUnitError("No unit ID")
+        setLoadingUnit(false)
+        return
       }
 
       try {
-        setLoadingUnit(true);
-        setUnitError(null);
+        setLoadingUnit(true)
+        setUnitError(null)
 
-        const ref = doc(db, "units", id);
-        const snap = await getDoc(ref);
+        const ref = doc(db, "units", id)
+        const snap = await getDoc(ref)
 
         if (!snap.exists()) {
-          setUnitError("Unit not found");
-          setLoadingUnit(false);
-          return;
+          setUnitError("Unit not found")
+          setLoadingUnit(false)
+          return
         }
 
-        const data = snap.data() as DocumentData;
+        const data = snap.data() as DocumentData
 
-        const metrics = (data.metrics as DocumentData | undefined) ?? {};
-        const health = (data.health as DocumentData | undefined) ?? {};
+        const metrics = (data.metrics as DocumentData | undefined) ?? {}
+        const health = (data.health as DocumentData | undefined) ?? {}
+        const vitalsRaw = (data.vitals as DocumentData | undefined) ?? {}
 
         const status =
           (metrics.status as string | undefined) ??
-          (data.status as string | undefined);
+          (data.status as string | undefined)
 
-        const lastHeartbeat = tsToDate(data.lastHeartbeat);
-        const lastInteraction = tsToDate(data.lastInteraction);
-        const lastSessionTimestamp = tsToDate(data.lastSessionTimestamp);
+        const lastHeartbeat = tsToDate(data.lastHeartbeat)
+        const lastInteraction = tsToDate(data.lastInteraction)
+        const lastSessionTimestamp = tsToDate(data.lastSessionTimestamp)
 
-        const lastSessionDuration = numOrUndefined(data.lastSessionDuration);
+        const lastSessionDuration = numOrUndefined(data.lastSessionDuration)
 
         const totalSessions =
           numOrUndefined(data.totalSessions) ??
-          numOrUndefined(metrics.totalSessions);
+          numOrUndefined(metrics.totalSessions)
 
         const totalInteractions =
           numOrUndefined(data.totalInteractions) ??
-          numOrUndefined(metrics.totalInteractions);
+          numOrUndefined(metrics.totalInteractions)
 
         const particleDeviceId =
           (metrics.particleDeviceId as string | undefined) ??
-          (data.particleDeviceId as string | undefined);
+          (data.particleDeviceId as string | undefined)
+
+        // ✅ parse vitals from unit doc
+        const vitalsTimestamp = anyToDate(vitalsRaw.timestamp)
+        const vitals: UnitVitals | undefined =
+          Object.keys(vitalsRaw).length === 0
+            ? undefined
+            : {
+                timestamp: vitalsTimestamp,
+
+                uptime: toNumber(vitalsRaw.uptime),
+                uptimeHours: toStringOrUndefined(vitalsRaw.uptimeHours),
+                uptimeDays: toStringOrUndefined(vitalsRaw.uptimeDays),
+
+                memoryUsagePercent: toStringOrUndefined(vitalsRaw.memoryUsagePercent),
+                freeMemory: toNumber(vitalsRaw.freeMemory),
+                freeMemoryKB: toStringOrUndefined(vitalsRaw.freeMemoryKB) ?? (toNumber(vitalsRaw.freeMemoryKB) != null ? String(vitalsRaw.freeMemoryKB) : undefined),
+                usedMemory: toNumber(vitalsRaw.usedMemory),
+                usedMemoryKB: toStringOrUndefined(vitalsRaw.usedMemoryKB) ?? (toNumber(vitalsRaw.usedMemoryKB) != null ? String(vitalsRaw.usedMemoryKB) : undefined),
+
+                signalStrength: toNumber(vitalsRaw.signalStrength),
+                signalQuality: toNumber(vitalsRaw.signalQuality),
+
+                wifiHealth: toStringOrUndefined(vitalsRaw.wifiHealth),
+                wifiHealthDescription: toStringOrUndefined(vitalsRaw.wifiHealthDescription),
+                wifiHealthTooltip: toStringOrUndefined(vitalsRaw.wifiHealthTooltip),
+
+                cloudDisconnects: toNumber(vitalsRaw.cloudDisconnects),
+                cloudConnects: toNumber(vitalsRaw.cloudConnects),
+                networkDisconnects: toNumber(vitalsRaw.networkDisconnects),
+
+                totalPublishes: toNumber(vitalsRaw.totalPublishes),
+                totalQueries: toNumber(vitalsRaw.totalQueries),
+                rateLimited: toNumber(vitalsRaw.rateLimited),
+
+                source: toStringOrUndefined(vitalsRaw.source),
+              }
+
+        // ✅ freshness (2 hours)
+        let vitalsFresh: boolean | undefined
+        if (vitalsTimestamp) {
+          vitalsFresh = Date.now() - vitalsTimestamp.getTime() <= 2 * 60 * 60 * 1000
+        }
 
         const u: UnitWithExtras = {
           id: snap.id,
@@ -274,54 +374,56 @@ export function UnitDetailPage() {
           totalSessions,
           totalInteractions,
           particleDeviceId,
-          
-          health: health as UnitHealth, 
+
+          health: health as UnitHealth,
           metrics: metrics as UnitMetrics,
           interactions: data.interactions as UnitInteractions,
 
           locationId: data.locationId as string | undefined,
           healthStatus: health.status as string | undefined,
-          needsMaintenance:
-            (health.needsMaintenance as boolean | undefined) ?? false,
-        };
+          needsMaintenance: (health.needsMaintenance as boolean | undefined) ?? false,
 
-        setUnit(u);
+          // ✅ new
+          vitals,
+          vitalsFresh,
+        }
+
+        setUnit(u)
       } catch (err) {
-        const msg =
-          err instanceof Error ? err.message : "Failed to load unit";
-        setUnitError(msg);
+        const msg = err instanceof Error ? err.message : "Failed to load unit"
+        setUnitError(msg)
       } finally {
-        setLoadingUnit(false);
+        setLoadingUnit(false)
       }
-    };
+    }
 
-    void loadUnit();
-  }, [id]);
+    void loadUnit()
+  }, [id])
 
   // -------- load sessions & interactions once we know particleDeviceId ----------
   useEffect(() => {
     if (!unit?.particleDeviceId) {
-      setSessions([]);
-      setInteractions([]);
-      return;
+      setSessions([])
+      setInteractions([])
+      return
     }
 
-    const deviceId = unit.particleDeviceId;
+    const deviceId = unit.particleDeviceId
 
     const loadSessions = async () => {
       try {
-        setSessionsLoading(true);
-        setSessionsError(null);
+        setSessionsLoading(true)
+        setSessionsError(null)
 
-        const ref = collection(db, "chargesessions");
-        const qSessions = query(ref, where("id", "==", deviceId), limit(50));
-        const snap = await getDocs(qSessions);
+        const ref = collection(db, "chargesessions")
+        const qSessions = query(ref, where("id", "==", deviceId), limit(50))
+        const snap = await getDocs(qSessions)
 
         const rows: SessionRow[] = snap.docs.map((docSnap) => {
-          const data = docSnap.data() as DocumentData;
-          const start = tsToDate(data.start);
-          const end = tsToDate(data.end);
-          const durationMinutes = numOrUndefined(data.duration);
+          const data = docSnap.data() as DocumentData
+          const start = tsToDate(data.start)
+          const end = tsToDate(data.end)
+          const durationMinutes = numOrUndefined(data.duration)
 
           return {
             id: docSnap.id,
@@ -339,65 +441,51 @@ export function UnitDetailPage() {
             appDeviceMake: data.appDeviceMake as string | undefined,
             appDeviceModel: data.appDeviceModel as string | undefined,
             appLocationId: data.appLocationId as string | undefined,
-          };
-        });
+          }
+        })
 
-        rows.sort((a, b) => {
-          const ta = a.start?.getTime() ?? 0;
-          const tb = b.start?.getTime() ?? 0;
-          return tb - ta;
-        });
-
-        setSessions(rows.slice(0, 10));
+        rows.sort((a, b) => (b.start?.getTime() ?? 0) - (a.start?.getTime() ?? 0))
+        setSessions(rows.slice(0, 10))
       } catch (err) {
-        const msg =
-          err instanceof Error ? err.message : "Failed to load sessions";
-        setSessionsError(msg);
+        const msg = err instanceof Error ? err.message : "Failed to load sessions"
+        setSessionsError(msg)
       } finally {
-        setSessionsLoading(false);
+        setSessionsLoading(false)
       }
-    };
+    }
 
     const loadInteractions = async () => {
       try {
-        setInteractionsLoading(true);
-        setInteractionsError(null);
+        setInteractionsLoading(true)
+        setInteractionsError(null)
 
-        const interactionsRef = collection(db, "interactions");
-        const qInteractions = query(
-          interactionsRef,
-          where("deviceId", "==", deviceId),
-          limit(50)
-        );
-        const snap = await getDocs(qInteractions);
+        const interactionsRef = collection(db, "interactions")
+        const qInteractions = query(interactionsRef, where("deviceId", "==", deviceId), limit(50))
+        const snap = await getDocs(qInteractions)
 
         const rows: InteractionRow[] = snap.docs.map((docSnap) => {
-          const data = docSnap.data() as DocumentData;
+          const data = docSnap.data() as DocumentData
 
-          let time: Date | undefined;
-          const tsRaw = data.timestamp;
+          let time: Date | undefined
+          const tsRaw = data.timestamp
 
           if (tsRaw && typeof tsRaw.toDate === "function") {
-            time = tsRaw.toDate();
+            time = tsRaw.toDate()
           } else if (typeof tsRaw === "number") {
-            time = new Date(tsRaw);
+            time = new Date(tsRaw)
           } else if (typeof tsRaw === "string") {
-            const cleaned = tsRaw.replace(" at ", " ");
-            const parsed = new Date(cleaned);
-            if (!isNaN(parsed.getTime())) {
-              time = parsed;
-            }
+            const cleaned = tsRaw.replace(" at ", " ")
+            const parsed = new Date(cleaned)
+            if (!isNaN(parsed.getTime())) time = parsed
           }
 
           if (!time) {
-            const dateISO = data.dateISO;
-            const hour = data.hourOfDay;
+            const dateISO = data.dateISO
+            const hour = data.hourOfDay
             if (dateISO && typeof hour === "number") {
-              const h = hour.toString().padStart(2, "0");
-              const fallback = new Date(`${dateISO}T${h}:00:00Z`);
-              if (!isNaN(fallback.getTime())) {
-                time = fallback;
-              }
+              const h = hour.toString().padStart(2, "0")
+              const fallback = new Date(`${dateISO}T${h}:00:00Z`)
+              if (!isNaN(fallback.getTime())) time = fallback
             }
           }
 
@@ -414,48 +502,41 @@ export function UnitDetailPage() {
             appDeviceModel: data.appDeviceModel as string | undefined,
             appSource: data.appSource as string | undefined,
             appDeviceIdHash: data.appDeviceIdHash as string | undefined,
-          };
-        });
+          }
+        })
 
-        rows.sort((a, b) => {
-          const ta = a.time?.getTime() ?? 0;
-          const tb = b.time?.getTime() ?? 0;
-          return tb - ta;
-        });
-
-        setInteractions(rows.slice(0, 10));
+        rows.sort((a, b) => (b.time?.getTime() ?? 0) - (a.time?.getTime() ?? 0))
+        setInteractions(rows.slice(0, 10))
       } catch (err) {
-        const msg =
-          err instanceof Error ? err.message : "Failed to load interactions";
-        setInteractionsError(msg);
+        const msg = err instanceof Error ? err.message : "Failed to load interactions"
+        setInteractionsError(msg)
       } finally {
-        setInteractionsLoading(false);
+        setInteractionsLoading(false)
       }
-    };
+    }
 
-    void loadSessions();
-    void loadInteractions();
-  }, [unit?.particleDeviceId]);
+    void loadSessions()
+    void loadInteractions()
+  }, [unit?.particleDeviceId])
 
   // -------- handlers to open drawer --------
   const handleSessionRowClick = async (session: SessionRow) => {
-    setSelectedInteraction(null);
-    setSelectedSession(session);
-    setSessionAppEvents([]);
-    setDrawerError(null);
+    setSelectedInteraction(null)
+    setSelectedSession(session)
+    setSessionAppEvents([])
+    setDrawerError(null)
 
     try {
-      setDrawerLoading(true);
-      const sessionRef = doc(db, "chargesessions", session.id);
-      const eventsRef = collection(sessionRef, "appChargingEvents");
-      const eventsSnap = await getDocs(eventsRef);
+      setDrawerLoading(true)
+      const sessionRef = doc(db, "chargesessions", session.id)
+      const eventsRef = collection(sessionRef, "appChargingEvents")
+      const eventsSnap = await getDocs(eventsRef)
 
       const events: AppChargingEventRow[] = eventsSnap.docs.map((docSnap) => {
-        const data = docSnap.data() as DocumentData;
+        const data = docSnap.data() as DocumentData
         return {
           id: docSnap.id,
-          time:
-            dateFromMs(data.timestampMs) ?? dateFromMs(data.startTimestampMs),
+          time: dateFromMs(data.timestampMs) ?? dateFromMs(data.startTimestampMs),
           batteryLevel: numOrUndefined(data.batteryLevel),
           batteryDelta: numOrUndefined(data.batteryDelta),
           isWireless: data.isWireless as boolean | undefined,
@@ -463,101 +544,76 @@ export function UnitDetailPage() {
           deviceMake: data.deviceMake as string | undefined,
           deviceModel: data.deviceModel as string | undefined,
           locationId: data.locationId as string | undefined,
-        };
-      });
+        }
+      })
 
-      events.sort((a, b) => {
-        const ta = a.time?.getTime() ?? 0;
-        const tb = b.time?.getTime() ?? 0;
-        return ta - tb;
-      });
-
-      setSessionAppEvents(events);
+      events.sort((a, b) => (a.time?.getTime() ?? 0) - (b.time?.getTime() ?? 0))
+      setSessionAppEvents(events)
     } catch (err) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : "Failed to load app charging events";
-      setDrawerError(msg);
+      const msg = err instanceof Error ? err.message : "Failed to load app charging events"
+      setDrawerError(msg)
     } finally {
-      setDrawerLoading(false);
+      setDrawerLoading(false)
     }
-  };
+  }
 
   const handleInteractionRowClick = (interaction: InteractionRow) => {
-    setSelectedSession(null);
-    setSessionAppEvents([]);
-    setDrawerError(null);
-    setSelectedInteraction(interaction);
-  };
+    setSelectedSession(null)
+    setSessionAppEvents([])
+    setDrawerError(null)
+    setSelectedInteraction(interaction)
+  }
 
   // ---------- simple guards ----------
   if (!id) {
     return (
-      <>
-        <div className="space-y-4">
-          <h1 className="text-3xl font-bold tracking-tight">Unit</h1>
-          <div className="rounded-md bg-destructive/10 p-4">
-            <p className="text-sm text-destructive">No unit ID</p>
-          </div>
+      <div className="space-y-4">
+        <h1 className="text-3xl font-bold tracking-tight">Unit</h1>
+        <div className="rounded-md bg-destructive/10 p-4">
+          <p className="text-sm text-destructive">No unit ID</p>
         </div>
-      </>
-    );
+      </div>
+    )
   }
 
   if (loadingUnit) {
     return (
-      <>
-        <div className="flex justify-center py-8">
-          <PulseLoader size={8} pulseCount={4} speed={1.5} />
-        </div>
-      </>
-    );
+      <div className="flex justify-center py-8">
+        <PulseLoader size={8} pulseCount={4} speed={1.5} />
+      </div>
+    )
   }
 
   if (unitError || !unit) {
     return (
-      <>
-        <div className="space-y-4">
-          <h1 className="text-3xl font-bold tracking-tight">Unit</h1>
-          <div className="rounded-md bg-destructive/10 p-4">
-            <p className="text-sm text-destructive">
-              {unitError ?? "Unit not found"}
-            </p>
-          </div>
+      <div className="space-y-4">
+        <h1 className="text-3xl font-bold tracking-tight">Unit</h1>
+        <div className="rounded-md bg-destructive/10 p-4">
+          <p className="text-sm text-destructive">{unitError ?? "Unit not found"}</p>
         </div>
-      </>
-    );
+      </div>
+    )
   }
 
   // ---------- main UI ----------
   return (
     <>
-    <PageHeader
-      title="Unit"
-      breadcrumbs={[
-        { label: "Units", href: "/units" },
-        { label: unit.name },
-      ]}
-    />
+      <PageHeader
+        title="Unit"
+        breadcrumbs={[{ label: "Units", href: "/units" }, { label: unit.name }]}
+      />
 
-    
-
-    
-    <div className="space-y-6">
+      <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3 flex-wrap">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => navigate(-1)}
-              className="gap-2"
-            >
+            <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="gap-2">
               <ArrowLeft className="h-4 w-4" />
               Back
             </Button>
+
             <h1 className="text-3xl font-bold tracking-tight">{unit.name}</h1>
+
             {unit.status && (
               <Badge
                 variant={
@@ -571,10 +627,9 @@ export function UnitDetailPage() {
                 {unit.status}
               </Badge>
             )}
+
             {unit.inUse && <Badge variant="outline">In use</Badge>}
-            {unit.needsMaintenance && (
-              <Badge variant="destructive">Needs maintenance</Badge>
-            )}
+            {unit.needsMaintenance && <Badge variant="destructive">Needs maintenance</Badge>}
           </div>
 
           {unit.locationId && <Badge variant="outline">{unit.locationId}</Badge>}
@@ -590,15 +645,9 @@ export function UnitDetailPage() {
             <CardContent className="space-y-4">
               <InfoItem label="Location" value={unit.locationId ?? "—"} />
               <InfoItem label="Position" value={unit.position ?? "—"} />
-              <InfoItem
-                label="Particle device ID"
-                value={unit.particleDeviceId ?? "—"}
-              />
+              <InfoItem label="Particle device ID" value={unit.particleDeviceId ?? "—"} />
               <InfoItem label="Current mode" value={unit.currentMode ?? "—"} />
-              <InfoItem
-                label="Current device type"
-                value={unit.currentDeviceType ?? "—"}
-              />
+              <InfoItem label="Current device type" value={unit.currentDeviceType ?? "—"} />
             </CardContent>
           </Card>
 
@@ -609,16 +658,88 @@ export function UnitDetailPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <InfoItem label="Status" value={unit.healthStatus ?? "—"} />
-              <InfoItem
-                label="Needs maintenance"
-                value={unit.needsMaintenance ? "Yes" : "No"}
-              />
+              <InfoItem label="Needs maintenance" value={unit.needsMaintenance ? "Yes" : "No"} />
               <InfoItem
                 label="Last calculated"
                 value={formatDate(tsOrDateToDate(unit.metrics?.calculatedAt))}
               />
+            </CardContent>
+          </Card>
 
+          {/* ✅ NEW: Vitals */}
+          <Card className="shadow-none">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center justify-between">
+                Vitals
+                {unit.vitals?.timestamp ? (
+                  <Badge variant={unit.vitalsFresh ? "default" : "secondary"}>
+                    {unit.vitalsFresh ? "Fresh" : "Stale"}
+                  </Badge>
+                ) : null}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <InfoItem
+                label="Last vitals"
+                value={
+                  unit.vitals?.timestamp
+                    ? `${ageLabel(unit.vitals.timestamp)} · ${formatDateTime(unit.vitals.timestamp)}`
+                    : "—"
+                }
+              />
 
+              <InfoItem label="WiFi health" value={unit.vitals?.wifiHealth ?? "—"} />
+              <InfoItem
+                label="WiFi description"
+                value={unit.vitals?.wifiHealthDescription ?? "—"}
+              />
+
+              <div className="grid grid-cols-2 gap-3">
+                <InfoItem
+                  label="Signal strength"
+                  value={unit.vitals?.signalStrength != null ? `${unit.vitals.signalStrength} dBm` : "—"}
+                />
+                <InfoItem
+                  label="Signal quality"
+                  value={unit.vitals?.signalQuality != null ? `${unit.vitals.signalQuality} dB` : "—"}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <InfoItem label="Memory usage" value={formatPercent(unit.vitals?.memoryUsagePercent)} />
+                <InfoItem
+                  label="Free memory"
+                  value={
+                    unit.vitals?.freeMemoryKB
+                      ? `${unit.vitals.freeMemoryKB} KB`
+                      : unit.vitals?.freeMemory != null
+                      ? `${unit.vitals.freeMemory}`
+                      : "—"
+                  }
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <InfoItem
+                  label="Cloud disconnects"
+                  value={unit.vitals?.cloudDisconnects != null ? unit.vitals.cloudDisconnects : "—"}
+                />
+                <InfoItem
+                  label="Network disconnects"
+                  value={unit.vitals?.networkDisconnects != null ? unit.vitals.networkDisconnects : "—"}
+                />
+              </div>
+
+              <InfoItem
+                label="Uptime"
+                value={
+                  unit.vitals?.uptimeDays || unit.vitals?.uptimeHours
+                    ? `${unit.vitals?.uptimeDays ?? "—"} days · ${unit.vitals?.uptimeHours ?? "—"} hours`
+                    : unit.vitals?.uptime != null
+                    ? `${unit.vitals.uptime}`
+                    : "—"
+                }
+              />
             </CardContent>
           </Card>
 
@@ -634,12 +755,8 @@ export function UnitDetailPage() {
               </div>
 
               <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">
-                  Last interaction
-                </p>
-                <p className="text-sm">
-                  {formatDateTime(unit.lastInteraction)}
-                </p>
+                <p className="text-sm text-muted-foreground">Last interaction</p>
+                <p className="text-sm">{formatDateTime(unit.lastInteraction)}</p>
                 <p className="text-xs text-muted-foreground">
                   {(unit.lastInteractionType ?? "—") +
                     " · " +
@@ -651,9 +768,7 @@ export function UnitDetailPage() {
 
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Last session</p>
-                <p className="text-sm">
-                  {formatDateTime(unit.lastSessionTimestamp)}
-                </p>
+                <p className="text-sm">{formatDateTime(unit.lastSessionTimestamp)}</p>
                 <p className="text-xs text-muted-foreground">
                   {(unit.lastSessionDuration != null
                     ? `${unit.lastSessionDuration.toFixed(0)} min`
@@ -674,19 +789,13 @@ export function UnitDetailPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">
-                  Total interactions
-                </p>
-                <p className="text-3xl font-bold">
-                  {unit.totalInteractions ?? "—"}
-                </p>
+                <p className="text-sm text-muted-foreground">Total interactions</p>
+                <p className="text-3xl font-bold">{unit.totalInteractions ?? "—"}</p>
               </div>
 
               <div className="space-y-1">
                 <p className="text-sm text-muted-foreground">Total sessions</p>
-                <p className="text-3xl font-bold">
-                  {unit.totalSessions ?? "—"}
-                </p>
+                <p className="text-3xl font-bold">{unit.totalSessions ?? "—"}</p>
               </div>
             </CardContent>
           </Card>
@@ -720,5 +829,5 @@ export function UnitDetailPage() {
         />
       </div>
     </>
-  );
+  )
 }

@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input"
 import { InteractionsStackedAreaChart } from "../components/interactions/InteractionsStackedAreaChart"
 import { InteractionDayDetailsSheet } from "../components/interactions/InteractionDayDetailsSheet"
 import { InteractionsTable, type InteractionRow } from "@/components/interactions/InteractionsTable"
+import { InteractionDetailsSheet } from "../components/interactions/InteractionDetailsSheet"
 
 type RangeKey = "90d" | "30d" | "7d"
 
@@ -125,6 +126,8 @@ export function InteractionsPage() {
   const [selectedTypes, setSelectedTypes] = useState<Set<CanonType>>(
     () => new Set<CanonType>(["successful_charge", "charging_started", "issue_cleared"])
   )
+
+  const [selectedInteractionId, setSelectedInteractionId] = useState<string | null>(null)
 
   // ✅ search + pagination controls
   const [search, setSearch] = useState("")
@@ -404,6 +407,10 @@ export function InteractionsPage() {
     }
   }
 
+  const onInteractionRowClick = (row: InteractionRow) => {
+  setSelectedInteractionId(row.id)
+}
+
   if (loading) {
     return (
       <>
@@ -576,7 +583,7 @@ export function InteractionsPage() {
           </div>
 
           <div className="p-4 pt-3">
-            <InteractionsTable rows={pageItems} />
+            <InteractionsTable rows={pageItems} onRowClick={onInteractionRowClick}/>
             {totalItems === 0 && (
               <div className="py-10 text-center text-sm text-muted-foreground">
                 No interactions found for this range / filters.
@@ -597,6 +604,14 @@ export function InteractionsPage() {
         loading={selectedDayLoading}
         error={selectedDayError}
       />
+
+      <InteractionDetailsSheet
+        open={Boolean(selectedInteractionId)}
+        interactionId={selectedInteractionId}
+        onOpenChange={(open) => {
+      if (!open) setSelectedInteractionId(null)
+  }}
+/>
     </>
   )
 }
